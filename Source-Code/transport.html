@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="T3D-lyh · 输运方程与数值求解：磁面平均粒子与能量方程、壳层离散、时间推进、边界条件和准中性约束。">
+  <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/transport.html">
+  <title>输运方程与数值求解 · T3D-lyh 源码手册</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="search.js"></script>
+  <script defer src="docs-ui.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+<div class="doc-mobile">
+  <button type="button" data-doc-toggle aria-controls="doc-sidebar" aria-expanded="false" hidden>☰ 目录</button>
+  <a href="home.html">T3D-lyh</a>
+</div>
+<aside class="doc-sidebar sidebar" id="doc-sidebar" aria-label="文档侧栏">
+  <div class="side-head">
+    <a href="home.html" class="side-brand"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"/></svg>T3D-lyh</a>
+    <p class="side-version">d5ac1fe · 源码与算例</p>
+    <form class="side-search" role="search" action="search.html" method="get">
+      <input type="search" name="q" placeholder="搜索文档" aria-label="搜索全部文档" required>
+    </form>
+  </div>
+  <nav class="side-toc" aria-label="分组导航"><p>文档</p><ul><li><a href="home.html">站点总览</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li><a href="parameters.html">完整输入参数</a></li></ul><p>手册章节</p><ul class="side-chapters"><li><a href="transport.html" aria-current="page">输运方程与数值求解</a><ul class="side-sections"><li><a href="#overview">控制方程与离散</a></li><li><a href="#changes">相对上游的改动</a></li></ul></li><li><a href="geometry.html">平衡与几何</a></li><li><a href="physics.html">物理源项与反馈</a></li><li><a href="closures.html">通量模型与并行调度</a></li><li><a href="io.html">输入、重启与诊断输出</a></li></ul><p>验证与源码</p><ul><li><a href="../W7X-ReLU-lyh/">W7-X ReLU 离子热输运</a></li><li><a href="SOURCE_VERSION.md">维护版版本记录</a></li><li><a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码快照</a></li><li><a href="https://t3d.readthedocs.io/en/latest/">上游 T3D 文档</a></li></ul></nav>
+</aside>
+<div class="doc-body" id="top">
+  <div class="doc-sheet">
+    <nav class="crumbs" aria-label="面包屑"><ol><li><a href="home.html">文档</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li aria-current="page">输运方程与数值求解</li></ol><a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/transport.html">查看页面源文件</a></nav>
+    <nav class="page-turn top" aria-label="顶部前后页"><a href="./" rel="prev">← 上一页：T3D-lyh 源码手册</a><a href="geometry.html" rel="next" class="doc-next">下一页：平衡与几何 →</a></nav>
+    <main class="document" id="main">
+      <p class="doc-kind">源码手册 · 第 01 章</p>
+<section id="transport" class="manual-chapter" aria-labelledby="transport-title">
+  <h1 id="transport-title"><span class="chapter-number">01</span> 输运方程与数值求解<a href="#transport" class="headerlink" aria-label="本章链接">¶</a></h1>
+  <div class="module-guide">
+<h2 id="overview">控制方程与离散<a href="#overview" class="headerlink" aria-label="本段链接">¶</a></h2>
+<p>令 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi></mrow><annotation encoding="application/x-tex">\rho</annotation></semantics></math> 为径向磁通面标签，<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo stretchy="false">(</mo><mi>ρ</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V(\rho)</annotation></semantics></math> 为包围体积，<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>V</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mi mathvariant="normal">d</mi><mi>V</mi><mi mathvariant="normal">/</mi><mi mathvariant="normal">d</mi><mi>ρ</mi></mrow><annotation encoding="application/x-tex">V&#x27;=\mathrm dV/\mathrm d\rho</annotation></semantics></math>。组分 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math> 的未知量是粒子密度 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>n</mi><mi>s</mi></msub></mrow><annotation encoding="application/x-tex">n_s</annotation></semantics></math> 和热压 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>s</mi></msub><mo>=</mo><msub><mi>n</mi><mi>s</mi></msub><msub><mi>T</mi><mi>s</mi></msub></mrow><annotation encoding="application/x-tex">p_s=n_sT_s</annotation></semantics></math>（<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mi>s</mi></msub></mrow><annotation encoding="application/x-tex">T_s</annotation></semantics></math> 按能量计）。用穿过整张磁面的向外粒子率 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="normal">Γ</mi><mi>s</mi></msub></mrow><annotation encoding="application/x-tex">\Gamma_s</annotation></semantics></math> 和热功率 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Q</mi><mi>s</mi></msub></mrow><annotation encoding="application/x-tex">Q_s</annotation></semantics></math> 写磁面平均方程：</p>
+<div class="formula" role="region" aria-label="磁面平均输运方程与壳层离散" tabindex="0">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mi mathvariant="normal">∂</mi><msub><mi>n</mi><mi>s</mi></msub></mrow><mrow><mi mathvariant="normal">∂</mi><mi>t</mi></mrow></mfrac><mo>=</mo><msub><mi>S</mi><mrow><mi>n</mi><mo separator="true">,</mo><mi>s</mi></mrow></msub><mo>−</mo><mfrac><mn>1</mn><msup><mi>V</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mfrac><mfrac><mrow><mi mathvariant="normal">∂</mi><msub><mi mathvariant="normal">Γ</mi><mi>s</mi></msub></mrow><mrow><mi mathvariant="normal">∂</mi><mi>ρ</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">\frac{\partial n_s}{\partial t}=S_{n,s}-\frac{1}{V&#x27;}\frac{\partial\Gamma_s}{\partial\rho}</annotation></semantics></math>
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mn>3</mn><mn>2</mn></mfrac><mfrac><mrow><mi mathvariant="normal">∂</mi><msub><mi>p</mi><mi>s</mi></msub></mrow><mrow><mi mathvariant="normal">∂</mi><mi>t</mi></mrow></mfrac><mo>=</mo><msub><mi>S</mi><mrow><mi>E</mi><mo separator="true">,</mo><mi>s</mi></mrow></msub><mo>−</mo><mfrac><mn>1</mn><msup><mi>V</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mfrac><mfrac><mrow><mi mathvariant="normal">∂</mi><msub><mi>Q</mi><mi>s</mi></msub></mrow><mrow><mi mathvariant="normal">∂</mi><mi>ρ</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">\frac{3}{2}\frac{\partial p_s}{\partial t}=S_{E,s}-\frac{1}{V&#x27;}\frac{\partial Q_s}{\partial\rho}</annotation></semantics></math>
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="normal">Γ</mi><mi>s</mi></msub><mo>=</mo><msup><mi>V</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo stretchy="false">⟨</mo><msub><mi mathvariant="bold">Γ</mi><mi>s</mi></msub><mo>⋅</mo><mi mathvariant="normal">∇</mi><mi>ρ</mi><mo stretchy="false">⟩</mo><mo separator="true">,</mo><mspace width="2em"/><msub><mi>Q</mi><mi>s</mi></msub><mo>=</mo><msup><mi>V</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo stretchy="false">⟨</mo><msub><mi mathvariant="bold-italic">q</mi><mi>s</mi></msub><mo>⋅</mo><mi mathvariant="normal">∇</mi><mi>ρ</mi><mo stretchy="false">⟩</mo></mrow><annotation encoding="application/x-tex">\Gamma_s=V&#x27;\langle\boldsymbol{\Gamma}_s\cdot\nabla\rho\rangle,\qquad Q_s=V&#x27;\langle\boldsymbol{q}_s\cdot\nabla\rho\rangle</annotation></semantics></math>
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">Δ</mi><msub><mi>V</mi><mi>j</mi></msub><mfrac><mrow><mi mathvariant="normal">d</mi><msub><mi>U</mi><mi>j</mi></msub></mrow><mrow><mi mathvariant="normal">d</mi><mi>t</mi></mrow></mfrac><mo>=</mo><msub><mi>F</mi><mrow><mi>j</mi><mo>−</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow></msub><mo>−</mo><msub><mi>F</mi><mrow><mi>j</mi><mo>+</mo><mn>1</mn><mi mathvariant="normal">/</mi><mn>2</mn></mrow></msub><mo>+</mo><mi mathvariant="normal">Δ</mi><msub><mi>V</mi><mi>j</mi></msub><msub><mi>S</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">\Delta V_j\frac{\mathrm d U_j}{\mathrm dt}=F_{j-1/2}-F_{j+1/2}+\Delta V_j S_j</annotation></semantics></math>
+</div>
+<p>前两式中的源分别是粒子率密度和体功率密度；最后一式同时适用于 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mo>=</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">U=n</annotation></semantics></math> 和 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mo>=</mo><mn>3</mn><mi>p</mi><mi mathvariant="normal">/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">U=3p/2</annotation></semantics></math>。在程序中活动壳的 ΔVⱼ 按节点几何权重离散（约为 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>V</mi><mi>j</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msubsup><mi mathvariant="normal">Δ</mi><mi>ρ</mi></mrow><annotation encoding="application/x-tex">V&#x27;_j\Delta\rho</annotation></semantics></math>）。两个壳共享同一界面通量，因此相加时内部通量精确抵消；轴面通量为零，外侧剖面节点固定，最后一个活动壳流出面是相邻节点的中点。电荷约束是 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mo>∑</mo><mi>s</mi></msub><msub><mi>Z</mi><mi>s</mi></msub><msub><mi>n</mi><mi>s</mi></msub><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\sum_s Z_s n_s=0</annotation></semantics></math>；从属密度由约束重建，温度通过 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>s</mi></msub><mi mathvariant="normal">/</mi><msub><mi>n</mi><mi>s</mi></msub></mrow><annotation encoding="application/x-tex">p_s/n_s</annotation></semantics></math> 得到。默认不推进电流、快离子分布或三维平衡。</p>
+<p><strong>时间离散。</strong> 令 D 表示源项减去通量散度。以 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi></mrow><annotation encoding="application/x-tex">\theta</annotation></semantics></math> 表示 <code>[time].alpha</code>；当 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>&lt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\theta&lt;1</annotation></semantics></math> 时用加权格式：</p>
+<div class="formula" role="region" aria-label="θ 法" tabindex="0">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><msub><mi>y</mi><mrow><mi>n</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>−</mo><msub><mi>y</mi><mi>n</mi></msub></mrow><mi>h</mi></mfrac><mo>=</mo><mi>θ</mi><mi>D</mi><mo stretchy="false">(</mo><msub><mi>y</mi><mrow><mi>n</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>θ</mi><mo stretchy="false">)</mo><mi>D</mi><mo stretchy="false">(</mo><msub><mi>y</mi><mi>n</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\frac{y_{n+1}-y_n}{h}=\theta D(y_{n+1})+(1-\theta)D(y_n)</annotation></semantics></math>
+</div>
+<p><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\theta=0</annotation></semantics></math> 为显式 Euler；<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\theta=1</annotation></semantics></math> 首步或历史重置后用后向 Euler，随后用变步长 BDF2。令 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mi>h</mi><mi mathvariant="normal">/</mi><msub><mi>h</mi><mo lspace="0em" rspace="0em">−</mo></msub></mrow><annotation encoding="application/x-tex">r=h/h_{-}</annotation></semantics></math> 为当前步长与上一接受步长之比，则 BDF2 导数为：</p>
+<div class="formula" role="region" aria-label="变步长 BDF2 导数" tabindex="0">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mrow><mfrac><mrow><mi mathvariant="normal">d</mi><mi>y</mi></mrow><mrow><mi mathvariant="normal">d</mi><mi>t</mi></mrow></mfrac><mo fence="true">∣</mo></mrow><mrow><mi>n</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>≈</mo><mfrac><mn>1</mn><mi>h</mi></mfrac><mrow><mo fence="true">[</mo><mfrac><mrow><mn>1</mn><mo>+</mo><mn>2</mn><mi>r</mi></mrow><mrow><mn>1</mn><mo>+</mo><mi>r</mi></mrow></mfrac><msub><mi>y</mi><mrow><mi>n</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>−</mo><mo stretchy="false">(</mo><mn>1</mn><mo>+</mo><mi>r</mi><mo stretchy="false">)</mo><msub><mi>y</mi><mi>n</mi></msub><mo>+</mo><mfrac><msup><mi>r</mi><mn>2</mn></msup><mrow><mn>1</mn><mo>+</mo><mi>r</mi></mrow></mfrac><msub><mi>y</mi><mrow><mi>n</mi><mo>−</mo><mn>1</mn></mrow></msub><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">\left.\frac{\mathrm d y}{\mathrm dt}\right|_{n+1}\approx \frac{1}{h}\left[\frac{1+2r}{1+r}y_{n+1}-(1+r)y_n+\frac{r^2}{1+r}y_{n-1}\right]</annotation></semantics></math>
+</div>
+<p>隐式迭代对同一离散残差线性化；Newton 更新量、时间离散残差和空间稳态残差分别记录。只有接受的步进入历史，拒步恢复旧态。默认 Newton 接受容差不等于实验或网格收敛。论文参见 <a href="https://doi.org/10.1063/1.3323082">Barnes 等：TRINITY</a>、<a href="https://doi.org/10.1017/S0022377824001107">Giacomin 等：T3D 方程与准线性闭合，§4.1</a>。</p>
+<p><strong>I/O。</strong> <code>[grid]</code> 决定节点和面，<code>[time]</code> 控制时间离散，<code>[[species]]</code> 设初值、边界、演化及约束；求解器读取界面 Γ/Q 与节点源项，输出 n、p、T、时间指标和功率余额。详见<a href="parameters.html">参数表</a>。</p>
+  </div>
+  <h2 id="changes" class="change-title">相对上游的改动<a href="#changes" class="headerlink" aria-label="本段链接">¶</a></h2>
+
+  <form class="toolbar" role="search" aria-label="搜索本章改动" hidden>
+    <label for="search">搜索本章改动</label>
+    <input id="search" type="search" placeholder="输入关键词" autocomplete="off" aria-controls="chapter-change-items">
+    <output id="search-status" for="search" role="status" aria-live="polite"></output>
+  </form>
+  <ul class="changes" id="chapter-change-items">
+    <li><strong>变步长 BDF2</strong> — 时间系数只使用已接受的历史步长；拒步恢复剖面并重算 θ 法所需的旧时刻输运项，不把试探状态写入历史。
+      <span class="ref"><a aria-label="变步长 BDF2：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Time.py">源码</a> · <a aria-label="变步长 BDF2：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_lyh_time_control.py">测试</a></span></li>
+    <li><strong>时间步控制</strong> — 校验时间参数与重试上限；首步和增步遵守 dtau_max，SI 输入只转换有量纲的时间量，不转换缩步比或误差阈值；到达终止时刻时消除仅由舍入产生的额外小步。
+      <span class="ref"><a aria-label="时间步控制：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Time.py">源码</a></span></li>
+    <li><strong>Newton 求解</strong> — 以差分形式构造时间离散残差并直接求解修正量，降低大项相减误差；Jacobian 用同一离散残差、受约束剖面和后端梯度响应，包含内部碰撞及热源导数。显式推进跳过 Jacobian。
+      <span class="ref"><a aria-label="Newton 求解：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Solver.py">源码</a> · <a aria-label="Newton 求解：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_discrete_jacobian.py">测试</a></span></li>
+    <li><strong>收敛诊断</strong> — 分开记录 Newton 更新量、时间离散残差、半离散稳态速率；稳态停止看实际输运速率，不因某次 Newton 更新很小而停。时间离散残差诊断不改变默认 Newton 接受阈值。
+      <span class="ref"><a aria-label="收敛诊断：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Solver.py">源码</a> · <a aria-label="收敛诊断：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numerics_round3.py">测试</a></span></li>
+    <li><strong>共享界面与磁轴</strong> — 相邻控制体共用同一个物理粒子／热通量；磁轴通量严格为零，指定外侧剖面节点不参与推进或活动壳积分。
+      <span class="ref"><a aria-label="共享界面与磁轴：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="共享界面与磁轴：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_vmec_source_balance.py">测试</a></span></li>
+    <li><strong>离散边界与终止</strong> — 固定边界作为代数约束而非 BDF 外推；遇 stop 文件回滚未接受试探步；零时长或无演化变量时只写诊断，不强行推进。
+      <span class="ref"><a aria-label="离散边界与终止：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/trinity_lib.py">源码</a> · <a aria-label="离散边界与终止：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py">测试</a></span></li>
+    <li><strong>径向网格与紧致梯度</strong> — 修复三点网格的节点／界面插值和边界导数。紧致差分用等价带状求解；保留浮点精度并拒绝非法网格、剖面和零差分步。未测量加速比。
+      <span class="ref"><a aria-label="径向网格与紧致梯度：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Profiles.py">源码</a> · <a aria-label="径向网格与紧致梯度：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numerics_round3.py">测试</a></span></li>
+    <li><strong>准中性与组分约束</strong> — 一致处理从属物种、关联密度和温度剖面；支持显式选定准中性从属组分，拒绝重复组分、冲突约束和非正／非有限的密度或压强试探态。
+      <span class="ref"><a aria-label="准中性与组分约束：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="准中性与组分约束：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_species.py">测试</a></span></li>
+    <li><strong>磁面准中性</strong> — 密度插值发生正值回退时，各物种改用同一线性模板；同步约束基础和扰动的电荷梯度，输运模型、Jacobian 和输出使用同一套面梯度。<span class="ref"> <a aria-label="磁面准中性：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="磁面准中性：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numeric_constraints.py">测试</a></span></li>
+    <li><strong>剖面算术与 RMS</strong> — 剖面持有自己的数据，拒绝同长度但不同坐标的混算；Newton 的缩放 RMS 在极大、极小和空状态下不会意外溢出、下溢或崩溃。<span class="ref"> <a aria-label="剖面算术与 RMS：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Profiles.py">源码</a> · <a aria-label="剖面算术与 RMS：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numeric_constraints.py">测试</a></span></li>
+  </ul>
+</section>
+    </main>
+    <nav class="page-turn bottom" aria-label="底部前后页"><a href="./" rel="prev">← 上一页：T3D-lyh 源码手册</a><a href="geometry.html" rel="next" class="doc-next">下一页：平衡与几何 →</a></nav>
+    <footer class="doc-footer">T3D-lyh · 源码 <code>d5ac1fe</code> · <a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="home.html">返回总览</a></footer>
+  </div>
+</div>
+</body>
+</html>

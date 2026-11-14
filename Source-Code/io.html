@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="T3D-lyh · 输入、重启与诊断输出：TOML 输入、剖面与通量导入、重启、时间帧和诊断输出。">
+  <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/io.html">
+  <title>输入、重启与诊断输出 · T3D-lyh 源码手册</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="search.js"></script>
+  <script defer src="docs-ui.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+<div class="doc-mobile">
+  <button type="button" data-doc-toggle aria-controls="doc-sidebar" aria-expanded="false" hidden>☰ 目录</button>
+  <a href="home.html">T3D-lyh</a>
+</div>
+<aside class="doc-sidebar sidebar" id="doc-sidebar" aria-label="文档侧栏">
+  <div class="side-head">
+    <a href="home.html" class="side-brand"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"/></svg>T3D-lyh</a>
+    <p class="side-version">d5ac1fe · 源码与算例</p>
+    <form class="side-search" role="search" action="search.html" method="get">
+      <input type="search" name="q" placeholder="搜索文档" aria-label="搜索全部文档" required>
+    </form>
+  </div>
+  <nav class="side-toc" aria-label="分组导航"><p>文档</p><ul><li><a href="home.html">站点总览</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li><a href="parameters.html">完整输入参数</a></li></ul><p>手册章节</p><ul class="side-chapters"><li><a href="transport.html">输运方程与数值求解</a></li><li><a href="geometry.html">平衡与几何</a></li><li><a href="physics.html">物理源项与反馈</a></li><li><a href="closures.html">通量模型与并行调度</a></li><li><a href="io.html" aria-current="page">输入、重启与诊断输出</a><ul class="side-sections"><li><a href="#overview">输入 → 计算 → 输出</a></li><li><a href="#changes">相对上游的改动</a></li></ul></li></ul><p>验证与源码</p><ul><li><a href="../W7X-ReLU-lyh/">W7-X ReLU 离子热输运</a></li><li><a href="SOURCE_VERSION.md">维护版版本记录</a></li><li><a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码快照</a></li><li><a href="https://t3d.readthedocs.io/en/latest/">上游 T3D 文档</a></li></ul></nav>
+</aside>
+<div class="doc-body" id="top">
+  <div class="doc-sheet">
+    <nav class="crumbs" aria-label="面包屑"><ol><li><a href="home.html">文档</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li aria-current="page">输入、重启与诊断输出</li></ol><a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/io.html">查看页面源文件</a></nav>
+    <nav class="page-turn top" aria-label="顶部前后页"><a href="closures.html" rel="prev">← 上一页：通量模型与并行调度</a><a href="parameters.html" rel="next" class="doc-next">下一页：完整输入参数 →</a></nav>
+    <main class="document" id="main">
+      <p class="doc-kind">源码手册 · 第 05 章</p>
+<section id="io" class="manual-chapter" aria-labelledby="io-title">
+  <h1 id="io-title"><span class="chapter-number">05</span> 输入、重启与诊断输出<a href="#io" class="headerlink" aria-label="本章链接">¶</a></h1>
+  <div class="module-guide">
+<h2 id="overview">输入 → 计算 → 输出<a href="#overview" class="headerlink" aria-label="本段链接">¶</a></h2>
+<ol>
+<li><strong>输入</strong>：主文件是扩展名为 <code>.in</code> 的 TOML。设置网格、时间、组分与约束、平衡、通量和源模型。文件路径通常相对进程工作目录。不要把模型名、后端模板和径向数据文件当成同一类参数。</li>
+<li><strong>计算</strong>：初始化剖面与定值导入；每次试探在同一几何上求源和输运，组装离散残差，接受或回退。默认外部文件只选择一个径向切片；<code>frame</code> 是初始化选择，不是随模拟时钟推进的索引。</li>
+<li><strong>输出</strong>：<code>.out</code> 是终端日志；默认快照 <code>*.log.npy</code>（Python pickle，只从可信来源读）；<code>*.nc</code> 为可选 NetCDF4（默认关）；<code>*.bp/</code> 为 ADIOS2（默认开，可显式关闭写出）。接受步检查点频率由 <code>[log].n_write</code> 决定；各输出形态由同一输出 stem 派生而不会共用文件名。</li>
+</ol>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">数据</th><th scope="col">所在网格与物理单位</th><th scope="col">输入／输出中的名字</th></tr></thead><tbody>
+<tr><td>组分密度、温度、压强</td><td>节点；10²⁰ m⁻³、keV、10²⁰ keV m⁻³</td><td><code>density</code>、<code>temperature</code>；输出 <code>n_*</code>、<code>T_*</code>、<code>p_*</code></td></tr>
+<tr><td>辅助粒子源、体热源</td><td>壳层节点；10²⁰ m⁻³ s⁻¹、MW/m³</td><td><code>aux_particle_source</code>、<code>aux_power_source</code>；<code>Sn_*</code>、<code>Sp_*</code> 输出是归一化本地值，乘对应 <code>Sn_ref_SI20</code>、<code>P_ref_MWm3</code> 转为物理单位</td></tr>
+<tr><td>穿面的粒子率、热功率</td><td>界面；10²⁰ s⁻¹、MW</td><td><code>particle_flux</code>、<code>heat_flux</code>；<code>Gam_SI20_*</code>、<code>Q_MW_*</code> 已有物理单位。不能用 <code>pflux_*</code>、<code>qflux_*</code>（gyro-Bohm）代替</td></tr>
+<tr><td>时间及有效性</td><td>时间帧；<code>t</code> 以 <code>t_ref</code> 归一化</td><td><code>t_step_idx</code>、<code>t_iter_idx</code>、<code>t_diagnostics_valid</code>；查已接受态时选 <code>t_iter_idx=0</code> 并核对有效标志</td></tr>
+</tbody></table></div>
+<p><strong>导入格式。</strong> ASCII <code>columns</code> 是空白分列文本（<code>#</code> 注释；<code>divide_by</code> 按列换单位）；节点初态插值、辅助源区间平均、通量面线性插值是不同操作。T3D <code>.nc/.npy/.bp</code> 用 <code>frame</code> 取一帧；旧源单位先还原再归一化，通量只读有量纲诊断。若从 T3D 快照恢复 Miller 几何，需保存同一径向网格的 Miller 几何对象的 <code>.npy</code>。TRANSP u-file 与 JETTO NetCDF 另可选时间切片用于剖面/源导入，不走通用通量表分支。运行期时变文件读取尚未实现。</p>
+<p><strong>复现与定位。</strong> 从对应源码根目录按 <code>t3d case.in -l case.out</code> 或已安装环境中的 <code>python -m t3d case.in</code> 启动；主输入不能脱离其相对文件路径。详细<a href="parameters.html">输入参数表</a>包括各组默认值、允许值、单位、后端环境和兼容性；用于实验性改模前先核对目标后端的验证边界。</p>
+  </div>
+  <h2 id="changes" class="change-title">相对上游的改动<a href="#changes" class="headerlink" aria-label="本段链接">¶</a></h2>
+
+  <form class="toolbar" role="search" aria-label="搜索本章改动" hidden>
+    <label for="search">搜索本章改动</label>
+    <input id="search" type="search" placeholder="输入关键词" autocomplete="off" aria-controls="chapter-change-items">
+    <output id="search-status" for="search" role="status" aria-live="polite"></output>
+  </form>
+  <ul class="changes" id="chapter-change-items">
+    <li><strong>重启单位与网格</strong> — 旧归一化量先还原到物理单位再用新参考量归一化，兼容旧 t_ref；拒绝坐标不匹配、缺测或掩蔽数据；变网格用壳层重叠映射，不声称跨几何体积守恒。
+      <span class="ref"><a aria-label="重启单位与网格：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py">源码</a> · <a aria-label="重启单位与网格：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py">测试</a></span></li>
+    <li><strong>文件通量导入</strong> — 新增文件通量模型 Import：复用 [import] 与组分级 import/keys，读取每张磁面的有符号粒子率 (10^20/s) 与热功率 (MW)；在共享通量面线性插值，不外推，不折作体源。支持 ASCII 与已有 T3D 帧，及与 ReLU 相加；固定通量不影响 Newton Jacobian。<span class="ref"> <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/docs/FluxModels.rst">配置</a> · <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/Import.py">源码</a> · <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_imported_flux.py">测试</a></span></li>
+    <li><strong>输入解析</strong> — 保留实际 TOML／文件错误，不用错误的字符串回退覆盖原因；ASCII 多列源项求和，兼容 JETTO 时间键。
+      <span class="ref"><a aria-label="输入解析：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py">源码</a> · <a aria-label="输入解析：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_import.py">测试</a></span></li>
+    <li><strong>检查点与输出路径</strong> — 每 N 个接受步写检查点，NPY 和 NetCDF 写完才替换上一份，BP 单独路径；各格式不会共用同一个文件名。
+      <span class="ref"><a aria-label="检查点与输出路径：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py">源码</a> · <a aria-label="检查点与输出路径：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py">测试</a></span></li>
+    <li><strong>诊断对齐与单位</strong> — 修正逐物种和离子汇总、粒子量和积分单位，分开输出 α 出生与沉积功率；记录几何文件、时间推进阶数、残差与诊断有效性。
+      <span class="ref"><a aria-label="诊断对齐与单位：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py">源码</a> · <a aria-label="诊断对齐与单位：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py">测试</a></span></li>
+    <li><strong>末帧与后处理</strong> — 内部闭合在最终剖面重算；外部闭合如未同步则明确标 NaN，不为日志隐式启动求解。功率图按所选帧取通量，用已接受状态和已知阶数算时间导数，不猜旧文件的推进阶数。
+      <span class="ref"><a aria-label="末帧与后处理：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/tools/source_sink_plot.py">源码</a> · <a aria-label="末帧与后处理：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py">测试</a></span></li>
+    <li><strong>TOML 写回与运行入口</strong> — 字符串、嵌套表和数组可写回并重新读入。源码快照可用 python -m t3d 启动；输入扩展名错误返回非零且不创建输出日志。<span class="ref"> <a aria-label="TOML 写回与运行入口：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py">源码</a> · <a aria-label="TOML 写回与运行入口：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
+    <li><strong>TRANSP / JETTO 导入</strong> — TRANSP 用质量和电荷辨认离子，不用电子密度补缺；处理单字符串与多源通道，校验径向网格和单位。JETTO 缺测值不再被当作物理数据。<span class="ref"> <a aria-label="TRANSP / JETTO 导入：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py">源码</a> · <a aria-label="TRANSP / JETTO 导入：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
+    <li><strong>模型标签与失败诊断</strong> — 单表和数组语法用同一诊断标签和计数，检查复合变量名碰撞；计算失败后不保留上一帧的有效诊断标记。<span class="ref"> <a aria-label="模型标签与失败诊断：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/FluxModels.py">源码</a> · <a aria-label="模型标签与失败诊断：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
+  </ul>
+</section>
+    </main>
+    <nav class="page-turn bottom" aria-label="底部前后页"><a href="closures.html" rel="prev">← 上一页：通量模型与并行调度</a><a href="parameters.html" rel="next" class="doc-next">下一页：完整输入参数 →</a></nav>
+    <footer class="doc-footer">T3D-lyh · 源码 <code>d5ac1fe</code> · <a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="home.html">返回总览</a></footer>
+  </div>
+</div>
+</body>
+</html>

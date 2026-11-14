@@ -115,6 +115,19 @@ figcaption { color: var(--muted); margin-top: .38rem; font-size: .86rem; }
 .page-turn .doc-next { margin-inline-start: auto; }
 .page-turn.bottom { border-top: 1px solid var(--line); padding-top: .75rem; margin-top: 1.6rem; }
 .site-footer,.doc-footer { font-size: .83rem; margin: 1rem 0 0; color: var(--muted); }
+/* Independent source manual chapters and their subsection navigation. */
+.side-toc .side-sections { padding-block: .2rem .3rem; }
+.side-toc .side-sections a { padding-inline-start: 1.95rem; font-size: .81rem; }
+.manual-contents { margin-top: 1.8rem; }
+.manual-chapters { padding-inline-start: 1.6em; }
+.manual-chapters > li { margin-block: .82rem; padding-inline-start: .24rem; scroll-margin-top: .3rem; }
+.manual-chapters > li:target { background: var(--pale); }
+.manual-chapters > li::marker { color: var(--muted); font: 700 .87em var(--mono); }
+.manual-chapters a { font-weight: 650; }
+.manual-chapters p { margin: .08rem 0 0; color: var(--muted); font-size: .9rem; }
+.manual-chapter > h1 { margin: .9rem 0 1.1rem; }
+.chapter-number { color: #702b86; font: 750 .58em var(--mono); margin-inline-end: .37em; }
+.manual-chapter .change-title { margin-top: 1.35rem; }
 @media(max-width: 780px) {
   html { scroll-padding-top: 3.55rem; }
   .doc-mobile { display: flex; align-items: center; gap: .6rem; background: var(--side-head); color: white; padding: .55rem var(--pad); min-height: 3rem; }

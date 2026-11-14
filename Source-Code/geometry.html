@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="T3D-lyh · 平衡与几何：VMEC／DESC 等几何输入、磁通坐标、磁面面积和壳层体积。">
+  <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/geometry.html">
+  <title>平衡与几何 · T3D-lyh 源码手册</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="search.js"></script>
+  <script defer src="docs-ui.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+<div class="doc-mobile">
+  <button type="button" data-doc-toggle aria-controls="doc-sidebar" aria-expanded="false" hidden>☰ 目录</button>
+  <a href="home.html">T3D-lyh</a>
+</div>
+<aside class="doc-sidebar sidebar" id="doc-sidebar" aria-label="文档侧栏">
+  <div class="side-head">
+    <a href="home.html" class="side-brand"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"/></svg>T3D-lyh</a>
+    <p class="side-version">d5ac1fe · 源码与算例</p>
+    <form class="side-search" role="search" action="search.html" method="get">
+      <input type="search" name="q" placeholder="搜索文档" aria-label="搜索全部文档" required>
+    </form>
+  </div>
+  <nav class="side-toc" aria-label="分组导航"><p>文档</p><ul><li><a href="home.html">站点总览</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li><a href="parameters.html">完整输入参数</a></li></ul><p>手册章节</p><ul class="side-chapters"><li><a href="transport.html">输运方程与数值求解</a></li><li><a href="geometry.html" aria-current="page">平衡与几何</a><ul class="side-sections"><li><a href="#overview">磁面坐标、几何与工作范围</a></li><li><a href="#changes">相对上游的改动</a></li></ul></li><li><a href="physics.html">物理源项与反馈</a></li><li><a href="closures.html">通量模型与并行调度</a></li><li><a href="io.html">输入、重启与诊断输出</a></li></ul><p>验证与源码</p><ul><li><a href="../W7X-ReLU-lyh/">W7-X ReLU 离子热输运</a></li><li><a href="SOURCE_VERSION.md">维护版版本记录</a></li><li><a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码快照</a></li><li><a href="https://t3d.readthedocs.io/en/latest/">上游 T3D 文档</a></li></ul></nav>
+</aside>
+<div class="doc-body" id="top">
+  <div class="doc-sheet">
+    <nav class="crumbs" aria-label="面包屑"><ol><li><a href="home.html">文档</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li aria-current="page">平衡与几何</li></ol><a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/geometry.html">查看页面源文件</a></nav>
+    <nav class="page-turn top" aria-label="顶部前后页"><a href="transport.html" rel="prev">← 上一页：输运方程与数值求解</a><a href="physics.html" rel="next" class="doc-next">下一页：物理源项与反馈 →</a></nav>
+    <main class="document" id="main">
+      <p class="doc-kind">源码手册 · 第 02 章</p>
+<section id="geometry" class="manual-chapter" aria-labelledby="geometry-title">
+  <h1 id="geometry-title"><span class="chapter-number">02</span> 平衡与几何<a href="#geometry" class="headerlink" aria-label="本章链接">¶</a></h1>
+  <div class="module-guide">
+<h2 id="overview">磁面坐标、几何与工作范围<a href="#overview" class="headerlink" aria-label="本段链接">¶</a></h2>
+<p>仿星器采用 <code>torflux</code>，令 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math> 为磁面面积，则：</p>
+<div class="formula" role="region" aria-label="环向磁通坐标和磁面几何" tabindex="0">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>ρ</mi><mo>=</mo><msqrt><mi>s</mi></msqrt><mo separator="true">,</mo><mspace width="2em"/><mi>s</mi><mo>=</mo><mfrac><msub><mi mathvariant="normal">Φ</mi><mi mathvariant="normal">t</mi></msub><msub><mi mathvariant="normal">Φ</mi><mrow><mi mathvariant="normal">t</mi><mo separator="true">,</mo><mi>L</mi><mi>C</mi><mi>F</mi><mi>S</mi></mrow></msub></mfrac></mrow><annotation encoding="application/x-tex">\rho=\sqrt{s},\qquad s=\frac{\Phi_{\mathrm t}}{\Phi_{\mathrm t,LCFS}}</annotation></semantics></math>
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mi mathvariant="normal">d</mi><mi>V</mi></mrow><mrow><mi mathvariant="normal">d</mi><mi>ρ</mi></mrow></mfrac><mo>=</mo><mn>2</mn><mi>ρ</mi><mfrac><mrow><mi mathvariant="normal">d</mi><mi>V</mi></mrow><mrow><mi mathvariant="normal">d</mi><mi>s</mi></mrow></mfrac><mo separator="true">,</mo><mspace width="2em"/><mi>A</mi><mo>=</mo><msup><mi>V</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo stretchy="false">⟨</mo><mo stretchy="false">∣</mo><mi mathvariant="normal">∇</mi><mi>ρ</mi><mo stretchy="false">∣</mo><mo stretchy="false">⟩</mo></mrow><annotation encoding="application/x-tex">\frac{\mathrm d V}{\mathrm d\rho}=2\rho\frac{\mathrm d V}{\mathrm ds},\qquad A=V&#x27;\langle\lvert\nabla\rho\rvert\rangle</annotation></semantics></math>
+</div>
+<p>只有得到正确的磁面投影或面积平均后，才能把热流密度换成穿面功率。代码保存 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi mathvariant="normal">/</mi><msup><mi>a</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">A/a^2</annotation></semantics></math>、<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>a</mi><mo stretchy="false">⟨</mo><mo stretchy="false">∣</mo><mi mathvariant="normal">∇</mi><mi>ρ</mi><mo stretchy="false">∣</mo><mo stretchy="false">⟩</mo></mrow><annotation encoding="application/x-tex">a\langle\lvert\nabla\rho\rvert\rangle</annotation></semantics></math> 等无量纲度量；活动壳体积近似为 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>a</mi><mn>3</mn></msup><mi mathvariant="normal">Δ</mi><mi>ρ</mi><mtext> </mtext><mo stretchy="false">(</mo><mi>A</mi><mi mathvariant="normal">/</mi><msup><mi>a</mi><mn>2</mn></msup><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mo stretchy="false">(</mo><mi>a</mi><mo stretchy="false">⟨</mo><mo stretchy="false">∣</mo><mi mathvariant="normal">∇</mi><mi>ρ</mi><mo stretchy="false">∣</mo><mo stretchy="false">⟩</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">a^3\Delta\rho\,(A/a^2)/(a\langle\lvert\nabla\rho\rvert\rangle)</annotation></semantics></math>。<code>rho_edge</code> 是指定的剖面边界，不必是 LCFS。</p>
+<p><strong>I/O。</strong> <code>[geometry]</code>/<code>[rescale]</code> 选择平衡和尺寸：<code>vmec</code> 读 <code>wout*.nc</code>（半网格 Nyquist (0,0) 雅可比提供体积导数；本版拒绝不支持的非对称文件）；<code>desc</code> 读原生平衡文件（可按后端需要导出 VMEC）；<code>geqdsk</code> 在 <code>rminor</code> 网格上由唯一兼容的 GX 或 GS2-QL 提供几何；<code>miller</code> 用兼容导入取得参数；<code>basic</code> 是解析简化几何。输出含节点/面面积、径向度量和逐帧几何记录。默认固定几何；在线 DESC 更新仅支持保持演化壳体积与参考小半径的收敛候选，不含移动磁面、压缩功或自举电流闭合。不同文件与后端的条件见<a href="parameters.html">参数表</a>。</p>
+  </div>
+  <h2 id="changes" class="change-title">相对上游的改动<a href="#changes" class="headerlink" aria-label="本段链接">¶</a></h2>
+
+  <form class="toolbar" role="search" aria-label="搜索本章改动" hidden>
+    <label for="search">搜索本章改动</label>
+    <input id="search" type="search" placeholder="输入关键词" autocomplete="off" aria-controls="chapter-change-items">
+    <output id="search-status" for="search" role="status" aria-live="polite"></output>
+  </form>
+  <ul class="changes" id="chapter-change-items">
+    <li><strong>VMEC 体积导数</strong> — 从半网格 Nyquist (0,0) 雅可比系数取 dV/ds，再按 ρ=√s 计算 dV/dρ；径向节点和输运面共用一致的面积／体积度量。
+      <span class="ref"><a aria-label="VMEC 体积导数：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/geometry_models/VMEC.py">源码</a> · <a aria-label="VMEC 体积导数：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_vmec_source_balance.py">测试</a></span></li>
+    <li><strong>磁面面积</strong> — 周期角度采样不重复积分接缝；遇到不支持的非对称 wout 明确报错，不静默忽略非对称项。
+      <span class="ref"><a aria-label="磁面面积：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/geometry_models/VMEC.py">源码</a></span></li>
+    <li><strong>基本几何与重标度</strong> — 圆形基本几何的 A/a² 和 a|∇ρ| 使用一致无量纲定义，修正磁场默认与 VMEC LCFS 回退；径向线平均不再带长度单位，非法度量明确报错。
+      <span class="ref"><a aria-label="基本几何与重标度：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py">源码</a> · <a aria-label="基本几何与重标度：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py">测试</a></span></li>
+    <li><strong>GEQDSK／Miller</strong> — 由实际能力选取唯一 GX 或 GS2-QL 几何提供者，不依赖自定义标签；GEQDSK 用 rminor 网格，逐面读入几何。Miller 必须启用兼容的导入，Boozer 预处理按后端能力执行。
+      <span class="ref"><a aria-label="GEQDSK／Miller：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py">源码</a> · <a aria-label="GEQDSK／Miller：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_gs2_ql_geometry_and_metric.py">测试</a></span></li>
+    <li><strong>DESC 平衡反馈</strong> — 在导入 JAX 后端前选定 CPU／GPU；压强增减均可触发，分开保存候选平衡，仅接受收敛结果；按需要输出 VMEC 格式。当前只接受不改变演化壳层体积／参考小半径的更新；没有移动磁面输运或压缩功。
+      <span class="ref"><a aria-label="DESC 平衡反馈：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/geometry_models/DESC.py">源码</a> · <a aria-label="DESC 平衡反馈：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_geometry_balance_interfaces.py">测试</a></span></li>
+    <li><strong>DESC 体积权重与 VMEC 输入</strong> — DESC 直接插值原生 dV/dρ，再用面积一致地构造度量，明确要求 ρ=√s。VMEC 拒绝掩蔽输入并确保读取失败时关闭 NetCDF。<span class="ref"> <a aria-label="DESC 体积权重与 VMEC 输入：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py">源码</a> · <a aria-label="DESC 体积权重与 VMEC 输入：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
+    <li><strong>几何积分与逐帧输出</strong> — 修复节点和输运面的插值体积积分，逐帧保存度量；功率分解按所选帧取几何。Miller 重启只导入物理几何，不继承旧运行的模型和目录。<span class="ref"> <a aria-label="几何积分与逐帧输出：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py">源码</a> · <a aria-label="几何积分与逐帧输出：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
+  </ul>
+</section>
+    </main>
+    <nav class="page-turn bottom" aria-label="底部前后页"><a href="transport.html" rel="prev">← 上一页：输运方程与数值求解</a><a href="physics.html" rel="next" class="doc-next">下一页：物理源项与反馈 →</a></nav>
+    <footer class="doc-footer">T3D-lyh · 源码 <code>d5ac1fe</code> · <a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="home.html">返回总览</a></footer>
+  </div>
+</div>
+</body>
+</html>
