@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="T3D-lyh 完整输入参数：类型、默认值、可选值、单位及适用范围。">
+  <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/parameters.html">
+  <title>T3D-lyh · 完整输入参数</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="parameters.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+<header class="site-header">
+  <div class="topbar">
+    <a class="brand" href="./">
+      <svg class="brand-mark" viewBox="0 0 40 40" width="36" height="36" aria-hidden="true" fill="none" stroke="currentColor">
+        <ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"></ellipse>
+        <ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"></ellipse>
+        <ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"></ellipse>
+      </svg>
+      <span>T3D-lyh</span>
+    </a>
+    <nav aria-label="外部链接">
+      <a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码</a>
+      <a href="parameters.html">输入参数</a>
+      <a href="../W7X-ReLU-lyh/">W7-X 算例</a>
+    </nav>
+  </div>
+</header>
+
+<div class="shell" id="top">
+  <aside class="sidebar"><nav aria-label="参数分组"><p class="nav-title">参数分组</p><ul><li><a href="#径向网格-grid">径向网格 <code>[grid]</code></a></li><li><a href="#时间推进-time">时间推进 <code>[time]</code></a></li><li><a href="#平衡几何-geometry">平衡几何 <code>[geometry]</code></a></li><li><a href="#尺寸与磁场缩放-rescale">尺寸与磁场缩放 <code>[rescale]</code></a></li><li><a href="#组分-species">组分 <code>[[species]]</code></a></li><li><a href="#内置物理-physics">内置物理 <code>[physics]</code></a></li><li><a href="#运行中反馈-time_dependence">运行中反馈 <code>[time_dependence]</code></a></li><li><a href="#数据文件-import">数据文件 <code>[import]</code></a></li><li><a href="#结果与检查点-log">结果与检查点 <code>[log]</code></a></li><li><a href="#通量模型-model-与外部源-source">通量模型 <code>[[model]]</code> 与外部源 <code>[[source]]</code></a></li></ul></nav></aside>
+  <main class="content parameter-content" id="main">
+    <div class="hero">
+      <p class="kicker">T3D-LYH · REFERENCE</p>
+      <h1>完整输入参数</h1>
+      <p>适用于维护版 <code>d5ac1fe</code>。按组列出类型、默认值、可选值、单位和约束；外部程序自身的原生模板键不属于 T3D 主输入。</p>
+      <div class="actions"><a href="./">返回源码手册</a><a href="../W7X-ReLU-lyh/">官方算例</a><a href="PARAMETERS.md">Markdown 版本</a></div>
+    </div>
+    <form class="toolbar param-toolbar" role="search" hidden>
+      <label for="param-search">查找参数（键名、模型或单位）</label>
+      <input type="search" id="param-search" placeholder="如 dtau、GX、heat_flux" autocomplete="off">
+      <output id="param-status" for="param-search" aria-live="polite"></output>
+    </form>
+    <p>本表逐项对应 <code>T3D-lyh d5ac1fe</code> 主驱动所读取的 TOML 配置。默认等于省略该项的结果；<strong>未设</strong>表示应省略，不应在 TOML 中写 <code>null</code>。布尔下文均取 <code>true</code> / <code>false</code>；除另注外，文件路径按运行时工作目录解析。<code>[[species]]</code>、<code>[[model]]</code>、<code>[[source]]</code> 是数组表，<code>[import]</code> 等是单表。后端模板自己的 TOML 或 Fortran namelist 不属于 T3D 顶层参数。</p>
+<section class="topic param-group" aria-labelledby="径向网格-grid">
+<h2 id="径向网格-grid">径向网格 <code>[grid]</code></h2>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>N_radial</code></td><td>10</td><td>整数 ≥ 3</td><td>剖面节点数；含最外 Dirichlet 节点，活动壳层和中点通量面各有 N−1 个。</td></tr>
+<tr><td><code>rho_edge</code></td><td>0.8</td><td>0 &lt; ρ ≤ 1，无量纲</td><td>外侧剖面节点坐标，不一定是 LCFS 或最后一个活动界面。</td></tr>
+<tr><td><code>flux_label</code></td><td><code>&quot;torflux&quot;</code></td><td><code>&quot;torflux&quot;</code>、<code>&quot;rminor&quot;</code></td><td>分别表示归一化环向磁通平方根和几何小半径比 r/a；影响几何、文件、模型之间的径向映射。</td></tr>
+<tr><td><code>rho_inner</code></td><td>ρ_edge/(2N−1)</td><td>历史键，给值会警告</td><td>当前不能手动配置；内侧剖面节点由均匀网格决定，磁轴零通量独立施加。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="时间推进-time">
+<h2 id="时间推进-time">时间推进 <code>[time]</code></h2>
+<p>默认时间单位是参考时间 t_ref。<code>[time].alpha</code> 是时间离散权重，与剖面参数 <code>alpha</code> 无关。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>dtau</code></td><td>0.5</td><td>有限正数，s 或归一化时间</td><td>初始步长；先限制到 dtau_max，最后一步可裁剪到 t_max。</td></tr>
+<tr><td><code>dtau_max</code></td><td>10.0</td><td>有限正数，s 或归一化时间</td><td>步长上限。</td></tr>
+<tr><td><code>dtau_adjust</code></td><td>2.0</td><td>有限实数 &gt; 1，无量纲</td><td>拒步后的除数；合格接受步的增长倍率另固定为 2。</td></tr>
+<tr><td><code>dtau_increase_threshold</code></td><td>newton_threshold/4</td><td>非负有限实数，无量纲</td><td>接受步的 RMS 足够小才允许增长步长。</td></tr>
+<tr><td><code>N_steps</code></td><td>1000</td><td>整数 ≥ 0</td><td>最大接受步数；0 时不推进。</td></tr>
+<tr><td><code>t_max</code></td><td>1000</td><td>非负有限实数，s 或归一化时间</td><td>终止时间；0 时不推进，仍可写诊断。</td></tr>
+<tr><td><code>alpha</code></td><td>1</td><td>有限实数 [0,1]</td><td>θ 隐式权重。0 显式，0 &lt; α &lt; 1 为 θ 方法；1 首步后向 Euler，之后用接受历史做变步长 BDF2。</td></tr>
+<tr><td><code>max_newton_iter</code></td><td>4</td><td>整数 ≥ 1</td><td>每个尝试步允许的 Newton 迭代次数。</td></tr>
+<tr><td><code>newton_threshold</code></td><td>0.02</td><td>非负有限实数，无量纲</td><td>常规 Newton 接受阈值（活动节点的相对剖面更新量 RMS；隐式残差另记诊断，不参与此阈值）。</td></tr>
+<tr><td><code>newton_tolerance</code></td><td>0.1</td><td>非负有限实数，无量纲</td><td>达到迭代上限时允许的较宽接受阈值。</td></tr>
+<tr><td><code>rms_converged</code></td><td>1e−16</td><td>非负有限实数，归一化空间变化率阈值</td><td>按各活动节点的相对空间平衡残差判断是否提前稳态终止；0 禁用，不等于 Newton 容差。</td></tr>
+<tr><td><code>max_timestep_retries</code></td><td>20</td><td>整数 ≥ 0</td><td>同一已接受时刻还能重试的次数上限。</td></tr>
+<tr><td><code>use_SI</code></td><td><code>false</code></td><td>布尔</td><td>为 true 时 dtau、dtau_max、t_max 为秒；只换算这三个量，倍率、RMS 阈值不换算。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="平衡几何-geometry">
+<h2 id="平衡几何-geometry">平衡几何 <code>[geometry]</code></h2>
+<p>VMEC、DESC 需 <code>torflux</code>；Miller 和 GEQDSK 需 <code>rminor</code>。GEQDSK 还需恰好一个 GX 或 GS2‑QL 几何提供者。输入的几何数据必须与其他径向数据的磁通标签一致。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>geo_option</code></td><td><code>&quot;basic&quot;</code></td><td><code>&quot;basic&quot;</code>、<code>&quot;vmec&quot;</code>、<code>&quot;desc&quot;</code>、<code>&quot;geqdsk&quot;</code>、<code>&quot;miller&quot;</code></td><td>圆形近似、VMEC wout、DESC 平衡、GEQDSK 或由读入文件提供的 Miller 几何。</td></tr>
+<tr><td><code>geo_file</code></td><td>空字符串</td><td>文件路径</td><td>VMEC 用 wout NetCDF；DESC 用原生平衡文件（通常 .h5）或 VMEC .nc；GEQDSK 用平衡文件，由后端读。</td></tr>
+<tr><td><code>AspectRatio</code></td><td>0（basic 回退 4）</td><td>正实数 R/a，无量纲</td><td>basic 可设；VMEC、DESC、GEQDSK 由平衡确定；Miller 从输入数据确定。</td></tr>
+<tr><td><code>iota23</code></td><td>0.75</td><td>正实数，无量纲</td><td>用于 ISS04 等的 ρ≈2/3 旋转变换；相关读入平衡可覆盖此值。</td></tr>
+<tr><td><code>import</code></td><td><code>false</code></td><td>布尔</td><td>Miller 必须启用，且共享 [import] 必须提供兼容几何；不用于替代 VMEC/ DESC 的 geo_file。</td></tr>
+<tr><td><code>evolve_equilibrium</code></td><td><code>false</code></td><td>布尔；启用只支持 <code>desc</code></td><td>允许按输运压强触发重算。不能把固定几何的回归理解成已验证移动磁面守恒。</td></tr>
+<tr><td><code>update_equilibrium</code></td><td>未设</td><td>布尔，历史别名</td><td>仅在 [geometry] 下等价于上项。两者同时出现且冲突会报错；[physics].update_equilibrium 不被读，官方旧算例保留该无效键。</td></tr>
+<tr><td><code>desc_pressure_delta_threshold</code></td><td>1.25</td><td>启用时有限实数 ≥ 1</td><td>最大双向压强比超过该阈值才更新平衡。</td></tr>
+<tr><td><code>desc_pressure_delta</code></td><td>2</td><td>启用时有限实数 ≥ 1</td><td>更新触发后，小于此双向压强比走扰动，大变化走完整求解。</td></tr>
+<tr><td><code>desc_use_vmec_format</code></td><td>按文件后缀推断</td><td>布尔；保留未设可自动推断</td><td>控制 DESC 重算的输出格式及依赖 VMEC 格式的耦合路径，不改变输入读取器；.nc 时默认 true，原生格式默认 false。</td></tr>
+<tr><td><code>desc_device</code></td><td><code>&quot;auto&quot;</code></td><td><code>&quot;auto&quot;</code>、<code>&quot;cpu&quot;</code>、<code>&quot;gpu&quot;</code></td><td>在导入计算后端前选择 JAX 设备；auto 优先可用 GPU。</td></tr>
+<tr><td><code>geo_outputs</code></td><td><code>&quot;geo/&quot;</code></td><td>目录路径</td><td>DESC 更新的平衡和日志目录，各次求解在隔离子目录。</td></tr>
+<tr><td><code>use_beta_prime_alpha</code></td><td><code>false</code></td><td>布尔</td><td>GS2-QL 用读入的 Miller β′_α 作为几何输入。</td></tr>
+<tr><td><code>beta_prime_const</code></td><td><code>false</code></td><td>布尔</td><td>用初始或导入的 β′，而不是每次随剖面更新（现行 GS2-QL 分支）。</td></tr>
+<tr><td><code>force_beta_prime_species</code></td><td><code>false</code></td><td>布尔</td><td>与 beta_prime_const 配合，沿用支持的 Miller 重启/几何所提供的 β′；不是所有几何均有该数据。</td></tr>
+<tr><td><code>compute_surface_areas</code></td><td><code>true</code></td><td>布尔，兼容键</td><td>当前版本读取但无后续控制分支，不会关闭通量面面积计算。</td></tr>
+<tr><td><code>overwrite</code></td><td><code>false</code></td><td>布尔，兼容键</td><td>当前 Geometry 只保存该键；不控制求解器后端各自的 overwrite。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="尺寸与磁场缩放-rescale">
+<h2 id="尺寸与磁场缩放-rescale">尺寸与磁场缩放 <code>[rescale]</code></h2>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>L_mult</code></td><td>1</td><td>推荐有限正实数，无量纲</td><td>线性尺度倍率；0 为历史输入，回退 1。体积随尺度的立方变化（适用的几何分支）。</td></tr>
+<tr><td><code>L_def</code></td><td>空格（自动）</td><td><code>&quot;minor&quot;</code>、<code>&quot;major&quot;</code> 或省略</td><td>basic/VMEC 选择小/大半径为标度。VMEC 指定模式时须给对应的 a_minor 或 R_major；DESC、GEQDSK 走 a_minor 优先逻辑。</td></tr>
+<tr><td><code>a_minor</code></td><td>0（未覆盖）</td><td>正实数，m</td><td>小半径标度，最终乘 L_mult；basic 若强制 minor 却为 0 回退 1 m。</td></tr>
+<tr><td><code>R_major</code></td><td>0（未覆盖）</td><td>正实数，m</td><td>大半径标度，乘 L_mult；basic 走大半径而未给值时回退 4 m；VMEC 的 major 模式须给正值。</td></tr>
+<tr><td><code>B_mult</code></td><td>1</td><td>推荐有限正实数，无量纲</td><td>磁场倍率；0 在常用几何分支回退 1。</td></tr>
+<tr><td><code>B_def</code></td><td>空格（自动）</td><td><code>&quot;LCFS&quot;</code>、<code>&quot;volavgB&quot;</code>、<code>&quot;vmecB0&quot;</code> 或省略</td><td>basic/VMEC 的磁场规格。DESC、GEQDSK 主要使用 Ba 覆盖加倍率。</td></tr>
+<tr><td><code>Ba</code></td><td>0（未覆盖）</td><td>正实数，T</td><td>边缘/参考磁场输入；VMEC 的 LCFS 模式可覆盖读入值，basic 默认 1 T。</td></tr>
+<tr><td><code>volavgB</code></td><td>0（未覆盖）</td><td>正实数，T</td><td>B_def=volavgB 时令体平均磁场达到给定标度；basic 将其作为 Ba。</td></tr>
+<tr><td><code>vmecB0</code></td><td>0（未覆盖）</td><td>正实数，T</td><td>B_def=vmecB0 时令轴上磁场达到给定标度；不是把 Btor 直接设为 B0。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="组分-species">
+<h2 id="组分-species">组分 <code>[[species]]</code></h2>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>type</code></td><td><code>&quot;deuterium&quot;</code></td><td>已知：<code>electron</code>、<code>hydrogen</code>、<code>deuterium</code>、<code>tritium</code>、<code>helium</code>、<code>boron</code>、<code>carbon</code>、<code>oxygen</code>、<code>neon</code>、<code>krypton</code>、<code>tungsten</code>，或带 mass 和 Z 的自定义离子名</td><td>不同组分名称必须唯一，须含电子和至少一个离子。</td></tr>
+<tr><td><code>tag</code></td><td>内置 e、H、D、T、He、B、C、O、Ne、Kr、W 等，否则用 type</td><td>字符串</td><td>日志、输出变量和文件导入缺省字段后缀。</td></tr>
+<tr><td><code>mass</code></td><td>内置组分表</td><td>正有限实数，m_p</td><td>质量乘质子质量；自定义离子显式提供。</td></tr>
+<tr><td><code>Z</code></td><td>内置组分表</td><td>电子 −1、离子有限正数，e</td><td>电荷数，参与准中性、碰撞与有效电荷。</td></tr>
+<tr><td><code>adiabatic</code></td><td><code>false</code></td><td>布尔，至多一个物种</td><td>标记绝热响应并关闭该组分独立的密度和温度推进；仅固定状态不等于开启它。</td></tr>
+<tr><td><code>bulk</code></td><td><code>false</code>（无标记则首个离子）</td><td>布尔，至多一个且不能为电子</td><td>主离子选择。</td></tr>
+<tr><td><code>use_as_reference</code></td><td>随 bulk（无显式选择则首个离子）</td><td>布尔，至多一个</td><td>决定湍流/gyro-Bohm 归一化参考组分。</td></tr>
+<tr><td><code>impurity</code></td><td>是否给定该组分的 Zeff 目标</td><td>布尔，至多一个离子</td><td>将该物种标为初始化杂质，参与准中性从属组分选择。</td></tr>
+<tr><td><code>Zeff</code></td><td>未设</td><td>实数，满足 Z_eff,background &lt; 目标 &lt; Z_impurity</td><td>初始化指定有效电荷并按电荷比例稀释其余离子；不同于 [physics].Zeff 的制动辐射系数设置。</td></tr>
+<tr><td><code>qneut_species</code></td><td><code>false</code>（自动挑选从属根）</td><td>布尔；至多一个，不可再给 density.equal_to</td><td>此组分的密度由逐面准中性计算，而不是独立推进；当现有链接已恒等满足准中性时不必消去自由度。</td></tr>
+<tr><td><code>rel_step</code></td><td>0.5</td><td>非负有限实数</td><td>通量闭合的相对梯度探测步幅。</td></tr>
+<tr><td><code>abs_step</code></td><td>0.5</td><td>非负有限实数</td><td>通量闭合的绝对梯度探测下限；有效探测步 max(rel_step×基准梯度绝对值, abs_step) 必须非零。</td></tr>
+<tr><td><code>density</code>、<code>temperature</code></td><td>空表</td><td>内联表，见下</td><td>分别设置粒子密度和温度的初值/边界/演化自由度。</td></tr>
+<tr><td><code>aux_particle_source</code>、<code>aux_power_source</code></td><td>空表</td><td>内联表，见下</td><td>分别设置辅助加料和加热的体源。</td></tr>
+<tr><td><code>density_source</code>、<code>pressure_source</code></td><td>未设</td><td>历史别名</td><td>与对应新键同现时旧表覆盖新表；建议只使用新键。</td></tr>
+<tr><td><code>density_relu_flux</code>、<code>pressure_relu_flux</code></td><td>空表</td><td>内联表，见下</td><td>ReLU 的组分级粒子/热通量参数；后者虽名 pressure，阈值作用在温度梯度。</td></tr>
+<tr><td><code>particle_flux</code>、<code>heat_flux</code></td><td>空表</td><td>内联表，见下</td><td>为 Import 模型绑定指定的穿面粒子率和热功率。</td></tr>
+</tbody></table></div>
+<h3 id="状态剖面-density-temperature">状态剖面 <code>density</code>、<code>temperature</code></h3>
+<p>状态单位：n 用 10²⁰ m⁻³，T 用 keV。表内键在 <code>density</code> 和 <code>temperature</code> 中各自使用；组分间链接在初始化与推进中分开处理。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>evolve</code></td><td><code>true</code></td><td>布尔</td><td>是否作为独立未知量。准中性、绝热或 equal_to 从属物种可移除此自由度。</td></tr>
+<tr><td><code>equal_to</code></td><td>未设</td><td><code>&quot;electron&quot;</code> 或 <code>&quot;0.5 * electron&quot;</code>；系数有限且 &gt; 0</td><td>全程保持与目标组分同类剖面的比例，不独立推进；拒绝循环。</td></tr>
+<tr><td><code>init_to</code></td><td>未设</td><td>同 equal_to</td><td>只在初始化按比例设置，之后按本组分 evolve 状态处理；同一剖面不可同时设 equal_to。</td></tr>
+<tr><td><code>shape</code></td><td><code>&quot;parabolic&quot;</code></td><td><code>&quot;parabolic&quot;</code>、<code>&quot;gaussian&quot;</code>、<code>&quot;exponential&quot;</code>、<code>&quot;manual&quot;</code>、<code>&quot;custom&quot;</code></td><td>内置初始剖面表达；启用 import 时文件读入优先。</td></tr>
+<tr><td><code>core</code></td><td>密度 4；温度 8</td><td>对应状态单位</td><td>parabolic 默认核心幅值。</td></tr>
+<tr><td><code>edge</code></td><td>未设（parabolic 回退：密度 0.5、温度 2）</td><td>对应状态单位</td><td>外侧约束；读文件时若显式指定会覆盖最外径向点。指数及自定义分支具有各自的重标定逻辑。</td></tr>
+<tr><td><code>sep</code></td><td>未设</td><td>对应状态单位</td><td>parabolic 给非零 core 和 sep 时以 ρ=1 为参考边界；低于 lineavg/volavg 优先级。</td></tr>
+<tr><td><code>lineavg</code></td><td>未设</td><td>对应状态单位</td><td>parabolic/custom 目标算术节点平均，实现中为离散节点平均，不是合成诊断弦积分。</td></tr>
+<tr><td><code>volavg</code></td><td>未设</td><td>对应状态单位</td><td>parabolic/custom 目标体平均；parabolic 在没有有效 lineavg 时使用。</td></tr>
+<tr><td><code>alpha</code></td><td>1</td><td>有限实数；平滑正剖面通常取正</td><td>parabolic 的外幂 α。</td></tr>
+<tr><td><code>alpha1</code></td><td>2</td><td>有限实数；平滑正剖面通常取正</td><td>parabolic 的径向内幂；形状为 (1−x^alpha1)^alpha。</td></tr>
+<tr><td><code>height</code></td><td>0</td><td>对应状态单位</td><td>gaussian 峰值；须配合有效 integrated 或非零正幅值，保证初值正。</td></tr>
+<tr><td><code>integrated</code></td><td>未设</td><td>状态单位 × m³</td><td>gaussian 体积分归一化目标；非零时优先于 height。</td></tr>
+<tr><td><code>width</code></td><td>0.1</td><td>正实数，ρ 的单位</td><td>gaussian 标准差。</td></tr>
+<tr><td><code>center</code></td><td>0</td><td>有限实数，ρ 的单位</td><td>gaussian 中心。</td></tr>
+<tr><td><code>coefs</code></td><td>[0,0,0,0]</td><td>数字数组，使用前四项；不足补 0</td><td>exponential 的 c₀…c₃：c₀ exp(−c₁ρ²−c₂ρ⁴−c₃ρ⁶)；c₀ 用状态单位。</td></tr>
+<tr><td><code>import</code></td><td><code>false</code></td><td>布尔</td><td>从共享 [import] 读初始状态；是否演化另由 evolve 决定。</td></tr>
+<tr><td><code>key</code></td><td>未设</td><td>变量/列名字符串（单数）</td><td>文件字段；ASCII/T3D 默认 n_&lt;tag&gt; 或 T_&lt;tag&gt;；JETTO 必须显式指定。</td></tr>
+<tr><td><code>profstr</code></td><td>未设</td><td>两行数字字符串，以分号隔开半径和值；数值可逗号或空白分隔</td><td>manual 用 PCHIP；横坐标是 ρ/ρ_edge，严格递增并覆盖节点，剖面值有限且正。</td></tr>
+<tr><td><code>func</code></td><td>未设</td><td>含 <code>def init(rho): ...</code> 的多行 Python 字符串</td><td>custom 参数；输入代码由本进程执行，仅使用可信 TOML；函数返回与网格长度匹配的值或标量。</td></tr>
+</tbody></table></div>
+<h3 id="辅助源-aux_particle_source-aux_power_source">辅助源 <code>aux_particle_source</code>、<code>aux_power_source</code></h3>
+<p>静态导入是一次性快照；没有文件时序强迫。高斯归一化使用演化域，不把固定边界节点当活动壳层。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>shape</code></td><td><code>&quot;gaussian&quot;</code></td><td>目前仅 <code>&quot;gaussian&quot;</code></td><td>不导入文件时的径向形状；代码求活动壳层平均。</td></tr>
+<tr><td><code>height</code></td><td>0</td><td>有限实数；粒子 10²⁰ m⁻³ s⁻¹、热 MW m⁻³</td><td>规定体源峰值；integrated 未设才使用，允许有符号源或汇。</td></tr>
+<tr><td><code>integrated</code></td><td>未设</td><td>有限实数；粒子 10²⁰ s⁻¹、热 MW</td><td>以活动体积分为目标；显式 0 会覆盖 height 并给零源。分布太窄或大部分在域外会警告或拒绝。</td></tr>
+<tr><td><code>width</code></td><td>0.1</td><td>正有限实数，ρ 的单位</td><td>非零高斯的标准差。</td></tr>
+<tr><td><code>center</code></td><td>0</td><td>有限实数，ρ 的单位</td><td>非零高斯的中心。</td></tr>
+<tr><td><code>import</code></td><td><code>false</code></td><td>布尔</td><td>使用共享 [import] 的体源列/场，替代高斯，不会关闭 collisions 等独立物理源；只进对应演化方程。</td></tr>
+<tr><td><code>keys</code></td><td>未设</td><td>字符串或字符串数组，取决于读者</td><td>ASCII、TRANSP、JETTO 可对多项求和；T3D 重启指定一个源诊断字段，读取后转换归一化，默认 Sn_aux_&lt;tag&gt; 或 Sp_aux_&lt;tag&gt;。</td></tr>
+</tbody></table></div>
+<h3 id="relu-闭合与规定通量绑定">ReLU 闭合与规定通量绑定</h3>
+<p>ReLU 的模型级参数与外部求解器参数列于下一组模型表。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>density_relu_flux.critical_gradient</code></td><td>1.0</td><td>实数，无量纲</td><td>粒子通量仿射零点 κc,0 的旧式名字；不是粒子 hard-ReLU 截止。</td></tr>
+<tr><td><code>density_relu_flux.critical_gradient0</code></td><td>采用 critical_gradient</td><td>实数，无量纲</td><td>覆盖粒子分支零点截距。</td></tr>
+<tr><td><code>density_relu_flux.critical_gradient1</code></td><td>0.0</td><td>实数，无量纲</td><td>粒子零点沿 ρ 的线性变化系数。</td></tr>
+<tr><td><code>density_relu_flux.slope</code></td><td>0.5</td><td>实数；非负为常见物理选择</td><td>粒子分支幅值；0 关闭该分支。</td></tr>
+<tr><td><code>density_relu_flux.noise_frac</code></td><td>0.0</td><td>兼容键</td><td>当前读取但不用于 ReLU；使用模型级 noise。</td></tr>
+<tr><td><code>pressure_relu_flux.critical_gradient</code></td><td>2.0</td><td>非负阈值，无量纲</td><td>热分支温度对数梯度阈值截距的旧式名字。</td></tr>
+<tr><td><code>pressure_relu_flux.critical_gradient0</code></td><td>采用 critical_gradient</td><td>实数，无量纲</td><td>显式截距覆盖旧键；应与梯度系数一起保证所有活动面上的阈值非负。</td></tr>
+<tr><td><code>pressure_relu_flux.critical_gradient1</code></td><td>0.0</td><td>实数，无量纲</td><td>热分支阈值沿 ρ 的线性变化系数；κc=κc,0+ρ κc,1。</td></tr>
+<tr><td><code>pressure_relu_flux.slope</code></td><td>0.5</td><td>实数；非负为常见物理选择</td><td>热分支幅值；0 关闭该分支。</td></tr>
+<tr><td><code>pressure_relu_flux.slope0</code></td><td>采用 slope</td><td>兼容键</td><td>当前读取但未参与 ReLU 求值。</td></tr>
+<tr><td><code>pressure_relu_flux.slope1</code></td><td>0.0</td><td>兼容键</td><td>当前读取但未实现组分斜率随半径变化。</td></tr>
+<tr><td><code>pressure_relu_flux.noise_frac</code></td><td>0.0</td><td>兼容键</td><td>当前读取但不用于 ReLU；使用模型级 noise。</td></tr>
+<tr><td><code>particle_flux.import</code>、<code>heat_flux.import</code></td><td><code>false</code></td><td>布尔；需启用 <code>[[model]] model=&quot;Import&quot;</code></td><td>选择固定物理穿面率；粒子限独立 n 方程，热限独立 p 方程。</td></tr>
+<tr><td><code>particle_flux.keys</code>、<code>heat_flux.keys</code></td><td><code>Gam_SI20_&lt;tag&gt;</code>、<code>Q_MW_&lt;tag&gt;</code></td><td>ASCII 单个列名或不同列名数组；T3D 单个有量纲诊断名字</td><td>ASCII 列相加；分别为 10²⁰ s⁻¹ 与 MW，正向外。不要把通量密度或 GB 通量当成穿面率，在所有活动面覆盖范围内按面插值，不外推。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="内置物理-physics">
+<h2 id="内置物理-physics">内置物理 <code>[physics]</code></h2>
+<p>历史 <code>[debug]</code> 仅在未给 <code>[physics]</code> 时作为它的整表别名，而不与 <code>[physics]</code> 合并。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>collisions</code></td><td><code>true</code></td><td>布尔</td><td>启用物种间库仑能量交换；作用于 p 方程，不是径向新经典输运。</td></tr>
+<tr><td><code>alpha_heating</code></td><td><code>true</code></td><td>布尔</td><td>启用 D–T α 沉积热源；出生与沉积分开诊断。</td></tr>
+<tr><td><code>alpha_efficiency</code></td><td>1.0</td><td>实数 [0,1]</td><td>出生 α 功率中进入模型局域能量源的份额。</td></tr>
+<tr><td><code>radiation</code></td><td><code>false</code></td><td>布尔</td><td>启用杂质辐射（线、复合、轫致）；与下项同真时优先，不重复加上分离的轫致辐射项。</td></tr>
+<tr><td><code>bremsstrahlung</code></td><td><code>false</code></td><td>布尔</td><td>单独启用基于 Z_eff 的轫致辐射。</td></tr>
+<tr><td><code>bremstrahlung</code></td><td>继承 bremsstrahlung</td><td>布尔，历史拼写</td><td>若存在会覆盖规范拼写；新文件不要使用。</td></tr>
+<tr><td><code>turbulent_exchange</code></td><td><code>false</code></td><td>布尔</td><td>将支持闭合提供的湍流物种能量交换加入压力源；不把径向热流本身变成交换源。</td></tr>
+<tr><td><code>f_tritium</code></td><td>0.5</td><td>实数 [0,1]</td><td>没有单独氚剖面时，用现有氘密度按隐含 D/T 混合比例估算聚变。</td></tr>
+<tr><td><code>f_helium</code></td><td>0</td><td>实数 [0,1]</td><td>燃料稀释的现象学系数，使反应计算的 n_D 和 n_T 分别乘 (1−f_helium)；不是独立的氦粒子输运模型。</td></tr>
+<tr><td><code>scale_density_to</code></td><td>未设</td><td><code>&quot;sudo_line&quot;</code>、<code>&quot;sudo_vol&quot;</code> 或 <code>&quot;正系数 * sudo_line&quot;</code> 等</td><td>按 Sudo 密度极限重标定目标线平均/体平均；启用时不得与外部加热后端合用。</td></tr>
+<tr><td><code>Zeff</code></td><td>未设 → 由组分求</td><td>数值，或下列内联表</td><td>只规定该分支所用的有效电荷剖面；并非初始化杂质密度。仅在相关物理模型中使用。</td></tr>
+</tbody></table></div>
+<h3 id="轫致辐射使用的-physics-zeff">轫致辐射使用的 <code>[physics].Zeff</code></h3>
+<p>数值 <code>Zeff = 1.5</code> 直接设常量。若用表选择解析形式，不应把默认的 0 理解为物理推荐值。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>from_species</code></td><td>非空表为 false；空表/缺省为 true</td><td>布尔</td><td>以 Σ Z_s² n_s / n_e 即时计算，优先于导入和预置形状。</td></tr>
+<tr><td><code>import</code></td><td><code>false</code></td><td>布尔</td><td>从当前实现支持的 TRANSP U-file 读取 Z_eff；ASCII、T3D 或 JETTO 读者不提供该专用入口。</td></tr>
+<tr><td><code>key</code></td><td>未设</td><td>变量名字符串</td><td>TRANSP 默认依次用 ZEFFR / ZEFF。</td></tr>
+<tr><td><code>shape</code></td><td><code>&quot;parabolic&quot;</code></td><td><code>&quot;parabolic&quot;</code>、<code>&quot;gaussian&quot;</code>、<code>&quot;exponential&quot;</code>、<code>&quot;manual&quot;</code></td><td>选择静态剖面，无 custom 模式。</td></tr>
+<tr><td><code>core</code></td><td>0</td><td>实数；Z_eff 无量纲</td><td>parabolic 核心幅值，应给物理合理的正值。</td></tr>
+<tr><td><code>edge</code></td><td>0</td><td>实数；Z_eff 无量纲</td><td>parabolic 外侧参数。</td></tr>
+<tr><td><code>sep</code></td><td>0</td><td>实数；Z_eff 无量纲</td><td>非零时给 ρ=1 参考值，见 parabolic 分支。</td></tr>
+<tr><td><code>volavg</code></td><td>未设</td><td>实数；Z_eff 无量纲</td><td>parabolic 的指定体平均。</td></tr>
+<tr><td><code>lineavg</code></td><td>未设</td><td>实数；Z_eff 无量纲</td><td>parabolic 的指定算术节点平均，优先于 volavg。</td></tr>
+<tr><td><code>alpha</code></td><td>1</td><td>有限实数</td><td>parabolic 外幂，通常取正。</td></tr>
+<tr><td><code>alpha1</code></td><td>2</td><td>有限实数</td><td>parabolic 内幂，通常取正。</td></tr>
+<tr><td><code>height</code></td><td>0</td><td>实数；Z_eff 无量纲</td><td>gaussian 峰值。</td></tr>
+<tr><td><code>integrated</code></td><td>未设</td><td>实数，体积积分单位 m³</td><td>gaussian 非零时优先。</td></tr>
+<tr><td><code>width</code></td><td>0.1</td><td>正有限实数，ρ 的单位</td><td>gaussian 标准差。</td></tr>
+<tr><td><code>center</code></td><td>0</td><td>实数，ρ 的单位</td><td>gaussian 中心。</td></tr>
+<tr><td><code>coefs</code></td><td>[0,0,0,0]</td><td>数字数组，使用前四项，不足补 0</td><td>exponential 系数，公式同组分剖面。</td></tr>
+<tr><td><code>profstr</code></td><td>未设</td><td>两行以分号隔开的数字字符串</td><td>manual 的 ρ/ρ_edge 和正值数据，插值同组分。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="运行中反馈-time_dependence">
+<h2 id="运行中反馈-time_dependence">运行中反馈 <code>[time_dependence]</code></h2>
+<p>这是反馈控制，不是预先指定时变源/通量。启用时对阈值和倍率做额外检查。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>update_source</code></td><td><code>false</code></td><td>布尔</td><td>接受步后按 Q=P_fusion/P_aux 调整可控辅助热源幅值；外部后端沉积不随这个倍数乘；没有正的可控源时会跳过。不读取下一文件帧。</td></tr>
+<tr><td><code>Q_threshold_low</code></td><td>2</td><td>非负有限实数，无量纲</td><td>低于阈值且仍有功率余量时增加辅助加热。</td></tr>
+<tr><td><code>Q_threshold_high</code></td><td>10</td><td>有限实数 ≥ Q_threshold_low</td><td>高于阈值时允许降低辅助加热，低高之间不调。</td></tr>
+<tr><td><code>p_up_multiplier</code></td><td>1.01</td><td>有限实数 ≥ 1，无量纲</td><td>一次增加的幅值倍数。</td></tr>
+<tr><td><code>p_down_multiplier</code></td><td>0.9</td><td>0 &lt; 倍数 ≤ 1，无量纲</td><td>一次减少的幅值倍数。</td></tr>
+<tr><td><code>p_aux_max_MW</code></td><td>100</td><td>有限实数 ≥ p_aux_min_MW，MW</td><td>总辅助热功率上限；核算时包含外部沉积。</td></tr>
+<tr><td><code>p_aux_min_MW</code></td><td>0.01</td><td>非负有限实数，MW</td><td>总辅助热功率下限。</td></tr>
+<tr><td><code>update_edge</code></td><td><code>false</code></td><td>布尔</td><td>允许按核心/边界比调高独立边界，保持组分链接和准中性约束；状态跳变重启 BDF 历史。</td></tr>
+<tr><td><code>p_threshold_ratio</code></td><td>4</td><td>正有限实数，无量纲</td><td>p_inner/p_edge 超过该值时允许增加 T_edge。</td></tr>
+<tr><td><code>p_edge_multiplier</code></td><td>1.05</td><td>有限实数 ≥ 1，无量纲</td><td>尽管名称有 p，实际乘外侧温度，然后由 nT 重算 p。</td></tr>
+<tr><td><code>T_edge_max</code></td><td>40</td><td>正有限实数，keV</td><td>可调外侧温度上限。</td></tr>
+<tr><td><code>n_threshold_ratio</code></td><td>4</td><td>正有限实数，无量纲</td><td>n_inner/n_edge 超过该值时允许增加 n_edge。</td></tr>
+<tr><td><code>n_edge_multiplier</code></td><td>1.05</td><td>有限实数 ≥ 1，无量纲</td><td>外侧密度调整倍数。</td></tr>
+<tr><td><code>n_edge_max</code></td><td>40</td><td>正有限实数，10²⁰ m⁻³</td><td>可调外侧密度上限。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="数据文件-import">
+<h2 id="数据文件-import">数据文件 <code>[import]</code></h2>
+<p>同次运行共享一个 <code>[import]</code>，各组分的 <code>key</code>/<code>keys</code> 负责选场。ASCII 用空白分列，可用 <code>#</code> 注释；不是 CSV。TRANSP 的 <code>*2d</code> 同目录还要有同前缀同后缀的 <code>*0d</code>、<code>*1d</code>；TRANSP NetCDF 未实现。T3D <code>.npy</code> 使用 Python pickle，只应加载可信文件。此版本均选取固定径向快照，不沿时间轴切换。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>type</code></td><td>未设（不读）</td><td><code>&quot;columns&quot;</code>（别名 <code>ascii/text/txt</code>）、<code>&quot;trinity&quot;</code>（<code>t3d</code>）、<code>&quot;transp&quot;</code>、<code>&quot;jetto&quot;</code></td><td>选择读取器。Import 通量仅接收 columns 或 trinity；TRANSP/JETTO 可提供状态/辅助源和支持的几何。</td></tr>
+<tr><td><code>file</code></td><td>空字符串</td><td>路径</td><td>ASCII 分列文本；T3D .log.npy/.nc/.bp；TRANSP ASCII U-file 的 *2d 文件；JETTO NetCDF。选择读取器后须给兼容文件。</td></tr>
+<tr><td><code>columns</code></td><td>[]</td><td>字符串数组，名称唯一</td><td>ASCII 逐列名称。状态/体源缺 rho 时会警告并假设均匀 [0,1]；通量必须给显式 rho。</td></tr>
+<tr><td><code>divide_by</code></td><td>[]（各列视为 1）</td><td>与 columns 等长的有限非零实数数组</td><td>ASCII 各列先除以对应数，使输入达到下述物理单位。</td></tr>
+<tr><td><code>frame</code></td><td>−1</td><td>整数，Python 索引</td><td>trinity 只选一帧；−1 为末帧，0 为首帧。通量要求所选帧诊断可用，坐标约定一致。</td></tr>
+<tr><td><code>transp_time</code></td><td>0.0</td><td>时间戳数值，通常 s</td><td>TRANSP 的非零值选最接近时间片；建议显式指定非零时间，0 并不可靠地等同首帧。</td></tr>
+<tr><td><code>jetto_time</code></td><td>未设（末帧）</td><td>有限时间戳数值，通常 s</td><td>JETTO 选最接近时刻；可使用 0。</td></tr>
+<tr><td><code>jett0_time</code></td><td>未设</td><td>兼容别名</td><td>写的是数字 0；仅 jetto_time 未指定时生效。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="结果与检查点-log">
+<h2 id="结果与检查点-log">结果与检查点 <code>[log]</code></h2>
+<p><code>.log.npy</code> 是常规输出。命令行 <code>t3d case.in -l case.out</code>（或 <code>python -m t3d</code>）的 <code>-l/--log</code> 另设文本求解日志；省略为输入同干名 <code>.out</code>，不是 <code>[log]</code> 中的键。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">默认</th><th scope="col">类型、单位或可选值</th><th scope="col">含义与生效条件</th></tr></thead><tbody>
+<tr><td><code>f_save</code></td><td>输入文件不带 .in 的路径</td><td>输出文件干路径字符串（非目录）</td><td>为 .log.npy、.nc、.bp 分别生成文件名；历史值带已知后缀时先剥离，避免覆盖。</td></tr>
+<tr><td><code>output_netcdf</code></td><td><code>false</code></td><td>布尔</td><td>按 NetCDF4 分组输出，适合跨语言读写、核对单位与诊断有效性。</td></tr>
+<tr><td><code>output_adios2</code></td><td><code>true</code></td><td>布尔</td><td>输出 ADIOS2 BP；需要可用的 ADIOS2 环境。关闭仅改变输出格式。</td></tr>
+<tr><td><code>n_write</code></td><td>1</td><td>整数 ≥ 1</td><td>每 N 个已接受时间步写检查点，停止后仍写末帧；不代表只保存 Newton 迭代后的时间点。</td></tr>
+</tbody></table></div>
+</section>
+<section class="topic param-group" aria-labelledby="通量模型-model-与外部源-source">
+<h2 id="通量模型-model-与外部源-source">通量模型 <code>[[model]]</code> 与外部源 <code>[[source]]</code></h2>
+<h3 id="模型选择与通用约定">模型选择与通用约定</h3>
+<p>以下参数由 <code>d5ac1fe</code> 直接读取；类型或范围写的是可用输入，不能视为已验证所有后端。省略表示 TOML 中不写该键，不是写入 <code>null</code>。外部程序自己的原生输入关键字不属于 T3D 参数表；模板可保留它们，T3D 为每次计算覆盖几何、组分、梯度和必需的运行/输出项。后端工作目录采用本次运行隔离，裸路径相对于启动目录。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>model</code></td><td>注册名或注明别名</td><td>&quot;GX&quot;</td><td>选择通量模型。见下表；全局可写 [model] 或多个 [[model]]。没有该表时默认尝试 GX。多个通量模型通常叠加；PowerBalance 例外。</td></tr>
+<tr><td><code>label</code></td><td>非空字符串，不含 /；同一运行中各模型的输出标签唯一</td><td>各模型表所示</td><td>用于分项通量输出，例如 Q_ReLU_MW_H。模型和独立源项各自有自己的标签空间。</td></tr>
+</tbody></table></div>
+<h3 id="relu-参数化通量">ReLU — 参数化通量</h3>
+<p>粒子支使用 <code>[species.density_relu_flux]</code> 的零通量逆标长；热支使用 <code>[species.pressure_relu_flux]</code> 的<strong>温度</strong>逆标长阈值。阈值径向变化由组分表指定；模型级 <code>noise</code> 与组分表中的保留字段 <code>noise_frac</code> 不同。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>D_neo</code></td><td>有限实数；物理扩散应非负</td><td>0.0</td><td>经验背景项强度：粒子分支加 n κ_n D_neo，热分支加 p κ_p D_neo；不是自动 DKES/SFINCS 新经典系数。</td></tr>
+<tr><td><code>power</code></td><td>有限实数 &gt; 0</td><td>1</td><td>阈值后超额梯度的幂；可使用非整数，对反向梯度采用有符号幂。</td></tr>
+<tr><td><code>noise</code></td><td>有限实数 [0,1]</td><td>0</td><td>乘法噪声幅度；按物理步、组分、通量面、通道抽样。同一接受步的 Newton、扰动和重试共用该步抽样。</td></tr>
+<tr><td><code>random_seed</code></td><td>非负整数</td><td>10</td><td>随机种子。</td></tr>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;ReLU&quot;</td><td>模型输出名称；模型名也接受 relu。</td></tr>
+</tbody></table></div>
+<h3 id="changhinton-解析新经典离子热通量">ChangHinton — 解析新经典离子热通量</h3>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;Chang-Hinton&quot;</td><td>只支持 [geometry].geo_option = &quot;miller&quot;。用第一种离子及局域磁面参数估算热输运；无粒子通量。不另读扩散系数文件。</td></tr>
+</tbody></table></div>
+<h3 id="rr-rechester-rosenbluth-型电子热通量补项">RR — Rechester–Rosenbluth 型电子热通量补项</h3>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>alpha_rr</code></td><td>有限实数 ≥ 0</td><td>1.0</td><td>局部热通量系数；电子热通量与温度逆标长 κ_T,e 的三次方成正比，0 关闭该项；非零时需有限正的电子碰撞性。</td></tr>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;RR&quot;</td><td>模型输出名称，仅电子能量通道有此补项。</td></tr>
+</tbody></table></div>
+<h3 id="powerbalance-功率与粒子平衡通量">PowerBalance — 功率与粒子平衡通量</h3>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;PowerBalance&quot;</td><td>用源项在活动壳层中的积分反推穿面通量；是平衡诊断闭合而非独立预测输运，不能与其他通量模型或 turbulent_exchange 并用。</td></tr>
+</tbody></table></div>
+<h3 id="import-文件给定穿面通量">Import — 文件给定穿面通量</h3>
+<p>接受 ASCII 空白分列文本或 T3D 快照中的物理诊断；不读任意 TRANSP/JETTO 通量或随时间推进的序列。通量面输入是整个磁面的有符号粒子率（10²⁰ s⁻¹）或热功率（MW）；不是热流密度，也不是已经归一化的 gyro-Bohm 通量。不是源项，不贡献剖面 Jacobian。单独一个数据列可按组分标记回落到 <code>Gam_SI20_&lt;tag&gt;</code> 或 <code>Q_MW_&lt;tag&gt;</code>。文件中不得有非零轴上穿面量，禁止径向外推；在读入时选定一帧后固定。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;Import&quot;</td><td>模型每次运行只能注册一次；模型名也接受 import。配置 [import] 和相应组分的 particle_flux、heat_flux；必须至少启用一个活跃通道。</td></tr>
+</tbody></table></div>
+<h3 id="gx-陀螺动理学通量">GX — 陀螺动理学通量</h3>
+<p>当前求解器在每个活动面及场线位置生成原生 GX TOML，读回 <code>.out.nc</code> / <code>.nc</code>，依据诊断数据结构兼容两种模式。平衡几何可由 VMEC、DESC、GEQDSK、Miller 生成。局部资源配置受 <code>GK_SYSTEM</code>（默认 <code>local</code>；内置支持 stellar、traverse、satori、perlmutter、polaris、summit）、<code>CUDA_VISIBLE_DEVICES</code>（无时尝试 <code>nvidia-smi</code>）和 Polaris 的 <code>PBS_NODEFILE</code> 影响。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>gx_path</code></td><td>含可执行 gx 的目录</td><td>环境 GX_PATH，否则空目录前缀</td><td>显式 TOML 键优先。若未 dry_run，执行文件必须可执行。</td></tr>
+<tr><td><code>gx_template</code></td><td>TOML 文件路径</td><td>&quot;tests/regression/gx_template.in&quot;</td><td>物理及数值模板。保留分辨率、边界等模板设置；T3D 填入局域几何、组分和梯度，并追加诊断/重启项。</td></tr>
+<tr><td><code>gx_outputs</code></td><td>目录路径</td><td>&quot;gx/&quot;</td><td>外部输出根；每个运行建隔离子目录，不复用旧运行的任意文件。</td></tr>
+<tr><td><code>gx_logfile</code></td><td>文件名</td><td>&quot;gx.log&quot;</td><td>该后端日志，另有各次调用日志。</td></tr>
+<tr><td><code>overwrite</code></td><td>布尔值</td><td>false</td><td>兼容旧输入。此提交读取但不用于放开跨运行输出复用。</td></tr>
+<tr><td><code>gpus_per_gx</code></td><td>正整数</td><td>1</td><td>每个通量管使用的 GPU 数；Polaris 内置启动器上限为 4。</td></tr>
+<tr><td><code>gx_max_concurrent</code></td><td>正整数或省略</td><td>省略</td><td>同一时间并行的 GX case 上限；本地/Polaris 还受分到的 GPU 组限制，自定义/其余集群启动器省略时为 1。</td></tr>
+<tr><td><code>run_command</code></td><td>字符串（按 argv 解析）或字符串数组</td><td>省略</td><td>自定义启动命令前缀，如 &quot;srun ...&quot;；不交给 shell，不解释管道或重定向。</td></tr>
+<tr><td><code>electromagnetic</code></td><td>布尔值</td><td>true</td><td>使用局域参考 β；false 写入很小的 5×10⁻⁴ 来近似静电极限。</td></tr>
+<tr><td><code>zeta_center</code></td><td>有限标量或非空列表（弧度）</td><td>[0.0]</td><td>仿星器通量管中心；多个位置用于场线平均或曲面插值。</td></tr>
+<tr><td><code>theta_zeta_fluxes</code></td><td>布尔值</td><td>false</td><td>用有权重的周期 θ-ζ 曲面平均替代场线的算术平均；需多个不同位置并能覆盖曲面。</td></tr>
+<tr><td><code>adiabatic_species</code></td><td>已声明组分的 type 字符串或省略</td><td>省略</td><td>指定由 GX 作为 Boltzmann 组分处理的粒子。species 中的 adiabatic 声明优先；参考组分必须为动力学组分，且至少有一个动力学组分。</td></tr>
+<tr><td><code>collisionality_scaling_factor</code></td><td>有限实数（物理上非负）</td><td>1.0</td><td>发送给 GX 的碰撞频率乘子。</td></tr>
+<tr><td><code>qflux_scaling_factor</code></td><td>有限实数</td><td>1.0</td><td>返回 GX 热通量乘子，用于灵敏度测试。</td></tr>
+<tr><td><code>tprim_shift</code></td><td>有限实数（无量纲）</td><td>0.0</td><td>加到 GX 的温度逆标长 tprim 的常量偏移。</td></tr>
+<tr><td><code>no_perturb_temperature</code></td><td>组分 type 的字符串数组</td><td>[]</td><td>这些独立温度不做 GX 有限差分扰动，例如某些 ETG 设置；不等于禁用 T3D 温度演化。</td></tr>
+<tr><td><code>dkap_T</code></td><td>有限正实数（无量纲）</td><td>0.5</td><td>计算 GX 温度梯度响应所用的绝对扰动下限。</td></tr>
+<tr><td><code>dkap_n</code></td><td>有限正实数（无量纲）</td><td>0.5</td><td>计算 GX 密度梯度响应所用的绝对扰动下限。</td></tr>
+<tr><td><code>check_stalls</code></td><td>布尔值</td><td>false</td><td>监视子进程输出是否停止增长；资源排队时宜谨慎使用。</td></tr>
+<tr><td><code>monitor_time</code></td><td>正实数（s，启用监视时）</td><td>10</td><td>监视周期。</td></tr>
+<tr><td><code>stall_abort_count</code></td><td>正整数（启用监视时）</td><td>6</td><td>连续无增长检查达到此次数后中止。</td></tr>
+<tr><td><code>build_ReLU</code></td><td>布尔值</td><td>false</td><td>使用 GX 结果估计各面代理模型，用于后续步；重试和几何变化可使代理失效。</td></tr>
+<tr><td><code>nsteps_ReLU</code></td><td>正整数（启用代理时）</td><td>1000</td><td>重新调用 GX 的物理步间隔，不是 Newton 迭代次数。</td></tr>
+<tr><td><code>abort_on_nans</code></td><td>布尔值</td><td>true</td><td>检查最终汇总的粒子、热与交换通量是否全有限；关闭不会取消文件读取阶段的有限性检查。</td></tr>
+<tr><td><code>no_restarts</code></td><td>布尔值</td><td>false</td><td>true 禁用 GX 热启动。默认也只允许同几何且允许重启的同次运行数据，不等于从旧工作目录回放。</td></tr>
+<tr><td><code>dry_run</code></td><td>布尔值</td><td>false</td><td>跳过 GX 可执行文件检查/启动，以产生 GX 输入。没有相应输出时不能完成有效的输运回算，不是无 GX 的求解模式。</td></tr>
+<tr><td><code>chie_over_chii</code></td><td>有限实数（物理上非负）</td><td>0</td><td>非零时以给定 χₑ/χᵢ 从离子热通量推定电子热通量；仅限绝热电子与一个动力学离子。</td></tr>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;GX&quot;</td><td>模型输出名称；模型名也接受 gx。</td></tr>
+</tbody></table></div>
+<h3 id="gs2-ql-线性陀螺动理学谱与准线性通量">GS2-QL — 线性陀螺动理学谱与准线性通量</h3>
+<p>面几何传递分支为 GEQDSK 或 Miller；模板用 Fortran namelist，不是 GX 的 TOML。单 case 的 <code>.out.nc</code> 提供线性和几何诊断；不足两个不同实际 (k_y) 的谱不允许积分。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>gs2_path</code></td><td>含 gs2 或 multigs2 的目录</td><td>环境 GS2_PATH，否则空目录前缀</td><td>显式 TOML 键优先；目标必须可执行。</td></tr>
+<tr><td><code>mpiexec</code></td><td>mpirun、srun、multigs2、mpirun-multigs2</td><td>&quot;mpirun&quot;</td><td>分别使用逐 case MPI/Slurm 启动或批量 multigs2；批量模式要求配套可执行程序。</td></tr>
+<tr><td><code>gs2_template</code></td><td>Fortran namelist 文件路径</td><td>&quot;tests/unit/gs2_template.in&quot;</td><td>线性 GS2 配置模板；T3D 写入几何、模态与组分并填必要输出开关。</td></tr>
+<tr><td><code>gs2_outputs</code></td><td>目录路径</td><td>&quot;gs2/&quot;</td><td>外部作业输出根，每次 T3D 运行建独立子目录。输出 .out.nc 包括增长率、谱、通量响应等供准线性回算。</td></tr>
+<tr><td><code>gs2_logfile</code></td><td>文件名</td><td>&quot;gs2.log&quot;</td><td>该后端日志。</td></tr>
+<tr><td><code>overwrite</code></td><td>布尔值</td><td>false</td><td>传给 GS2 输入 namelist 写出函数的 force；重名 trial 仍拒绝，不表示允许重用旧结果。</td></tr>
+<tr><td><code>cpus_per_gs2</code></td><td>正整数</td><td>1</td><td>每个 GS2 case 的 MPI 进程数；不超过 nproc。</td></tr>
+<tr><td><code>nproc</code></td><td>满足 nproc ≥ cpus_per_gs2 的正整数</td><td>1</td><td>分配总进程数；并行 case 数为其与每 case 进程数比值的整数部分。</td></tr>
+<tr><td><code>electromagnetic</code></td><td>布尔值</td><td>true</td><td>是否走电磁设置；false 关闭电磁势相关项。</td></tr>
+<tr><td><code>gammaE</code></td><td>有限标量或长度 N_radial−1 的列表</td><td>0</td><td>各面归一化 E×B 剪切率；非零时气球角扫描必须覆盖计算所需区间。</td></tr>
+<tr><td><code>bakdif_on_template</code></td><td>布尔值</td><td>false</td><td>true 从原模板保留相关分布函数扩散设置；false 写入 fexpr=0.48、bakdif=0.05。</td></tr>
+<tr><td><code>nky</code></td><td>整数 ≥ 2</td><td>2</td><td>默认 k_y 谱采样数；use_toroidal_n 时最终取 nn 的长度。</td></tr>
+<tr><td><code>kymin</code></td><td>有限实数</td><td>0.1</td><td>归一化 k_y 扫描起点；谱积分需要至少两个不同的实际 k_y。</td></tr>
+<tr><td><code>kymax</code></td><td>有限实数</td><td>1.0</td><td>归一化 k_y 扫描终点；建议大于起点。</td></tr>
+<tr><td><code>theta0</code></td><td>有限角度数组（弧度）</td><td>[]</td><td>非空则覆盖 ntheta0/th0min/th0max；多点数组必须从 0 严格递增。</td></tr>
+<tr><td><code>ntheta0</code></td><td>正整数</td><td>1</td><td>theta0 为空时使用的气球角采样数。</td></tr>
+<tr><td><code>th0min</code></td><td>有限实数（弧度）</td><td>0</td><td>气球角起点；多点要求从 0 开始。</td></tr>
+<tr><td><code>th0max</code></td><td>有限实数（弧度）</td><td>0</td><td>气球角终点；多点要求递增，并覆盖所需剪切积分区间。</td></tr>
+<tr><td><code>use_toroidal_n</code></td><td>布尔值</td><td>false</td><td>true 使用环向整数模数 nn 而非 k_y 均匀扫描。</td></tr>
+<tr><td><code>nn</code></td><td>至少两项的环向模数列表</td><td>启用 use_toroidal_n 时必填</td><td>选定环向模，最终必须形成至少两个不同的实际 k_y。</td></tr>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;GS2&quot;</td><td>模型选择名为 GS2-QL 或 gs2-ql；热速度归一化为 √(2T/m)，不可与声明相反约定的模型混用。</td></tr>
+</tbody></table></div>
+<h3 id="sfincs-局域新经典通量">SFINCS — 局域新经典通量</h3>
+<p>支持 <code>GK_SYSTEM</code> 为 local（默认）、perlmutter、stellar、polaris、summit；Polaris 的内置启动需 <code>PBS_NODEFILE</code>。其他环境回退到本地 MPI 启动，可用 <code>run_command</code> 覆盖。真实运行验证范围仅为既有 W7‑X CPU 冒烟，不等同于完整时序和并行扩展验证。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>sfincs_path</code></td><td>含 sfincs 的目录</td><td>工作目录</td><td>非空环境 SFINCS_PATH 优先于此键。</td></tr>
+<tr><td><code>sfincs_template</code></td><td>Fortran namelist 路径</td><td>&quot;tests/regression/sfincs_template.namelist&quot;</td><td>T3D 填好 VMEC 几何文件、组分、rho、密度/温度导数；支持 VMEC 或以 VMEC 格式导出的 DESC，要求 torflux。</td></tr>
+<tr><td><code>sfincs_outputs</code></td><td>目录路径</td><td>&quot;sfincs/&quot;</td><td>作业输出根；每次 T3D 运行建隔离目录，按试次/面生成 input.namelist 和 sfincsOutput.h5。</td></tr>
+<tr><td><code>sfincs_logfile</code></td><td>文件名</td><td>&quot;sfincs.log&quot;</td><td>该后端日志。</td></tr>
+<tr><td><code>overwrite</code></td><td>布尔值</td><td>false</td><td>兼容旧输入。该提交读取但不用于跨运行复用。</td></tr>
+<tr><td><code>run_command</code></td><td>字符串（按 argv 解析）或字符串数组</td><td>省略</td><td>自定义运行命令前缀；应按实际任务数分配资源。</td></tr>
+<tr><td><code>cpus_per_sfincs</code></td><td>正整数</td><td>1</td><td>每 MPI 进程的线程数；通过 OMP_NUM_THREADS 传递。</td></tr>
+<tr><td><code>mpis_per_sfincs</code></td><td>正整数</td><td>1</td><td>每个磁面 case 的 MPI 进程数。</td></tr>
+<tr><td><code>cpus_total</code></td><td>正整数；至少覆盖一个 case</td><td>可见 CPU 数（优先进程 affinity）</td><td>最大并发 case 按 cpus_total / (cpus_per_sfincs × mpis_per_sfincs) 向下取整；Polaris 另受实分节点约束。</td></tr>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;SFINCS&quot;</td><td>模型选择名也接受 sfincs；SFINCS 输出换算后按 T3D √(T/m) 约定，可与 GX 相加。</td></tr>
+</tbody></table></div>
+<h3 id="knosos-仿星器新经典通量">KNOSOS — 仿星器新经典通量</h3>
+<p>由 <code>booz_xform</code> 预处理 wout 得到 <code>boozmn.nc</code>；<code>GK_SYSTEM</code> 的内置启动分支是 local（默认）、perlmutter、stellar、summit。其余环境需显式 <code>run_command</code>。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>knosos_path</code></td><td>含 knosos.x 的目录</td><td>工作目录</td><td>非空环境 KNOSOS_PATH 优先于此键。</td></tr>
+<tr><td><code>knosos_outputs</code></td><td>目录路径</td><td>&quot;knosos/&quot;</td><td>作业输出根。T3D 生成 input.model、input.species、input.surfaces、input.parameters 和 profiles_trin.txt，读每个面的 knosos_for_predictive.txt.NN。</td></tr>
+<tr><td><code>knosos_logfile</code></td><td>文件名</td><td>&quot;knosos.log&quot;</td><td>该后端日志。</td></tr>
+<tr><td><code>adiabatic_electrons</code></td><td>布尔值</td><td>false</td><td>true 在输入中用绝热电子设定。不可与 T3D 独立电子输运状态混淆。</td></tr>
+<tr><td><code>overwrite</code></td><td>布尔值</td><td>false</td><td>兼容旧输入。该提交读取但不用于跨运行复用。</td></tr>
+<tr><td><code>run_command</code></td><td>字符串（按 argv 解析）或字符串数组</td><td>省略</td><td>自定义命令前缀。默认一个计算需 N_radial−1 个 CPU 任务。</td></tr>
+<tr><td><code>cpus_total</code></td><td>正整数且 ≥ N_radial−1</td><td>本地可见 CPU 数；已知集群默认 N_radial−1</td><td>按 CPU 容量限定并发的 KNOSOS case 数。</td></tr>
+<tr><td><code>DIRDB</code></td><td>路径字符串</td><td>省略</td><td>可选数据库路径，写入 input.surfaces；语义由 KNOSOS 决定。</td></tr>
+<tr><td><code>DIRS</code></td><td>KNOSOS namelist 可解析的值（原样行文本）</td><td>省略</td><td>传给 input.surfaces 的后端选项；范围以所用 KNOSOS 版本为准。</td></tr>
+<tr><td><code>SDKES</code></td><td>KNOSOS namelist 可解析的值（原样行文本）</td><td>省略</td><td>传给 input.surfaces 的 DKES 相关后端选项；范围以所用 KNOSOS 版本为准。</td></tr>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;KNOSOS&quot;</td><td>模型选择名也接受 knosos。需 booz_xform 和可预处理的 VMEC 格式几何；内部 KNOSOS 面坐标为 s=ρ²。</td></tr>
+</tbody></table></div>
+<h3 id="neo-gacode-轴对称新经典通量">NEO — GACODE 轴对称新经典通量</h3>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>neo_template</code></td><td>KEY=VALUE 文本路径</td><td>必填</td><td>需 N_RADIAL=1、PROFILE_MODEL=1、SILENT_FLAG=0（可由接口补入）；SIM_MODEL 若显式指定为 1 或 2。使用 Miller 类几何的局域参数。</td></tr>
+<tr><td><code>neo_outputs</code></td><td>目录路径</td><td>&quot;neo&quot;</td><td>作业输出根。每个磁面/扰动生成 input.neo，读 out.neo.transport。</td></tr>
+<tr><td><code>qmax</code></td><td>有限实数；≤0 关闭</td><td>0</td><td>正值仅裁剪最内传输面热通量的绝对值（模型归一化）；保留方向。</td></tr>
+<tr><td><code>mpiexec</code></td><td>mpirun、srun、local、none、空串</td><td>&quot;mpirun&quot;</td><td>NEO 每个 case 一个 MPI rank；local/none/空串不加启动前缀。</td></tr>
+<tr><td><code>cpus_per_task</code></td><td>正整数</td><td>1</td><td>每 case 的 CPU 数，也是 OMP_NUM_THREADS。</td></tr>
+<tr><td><code>nproc</code></td><td>正整数且 ≥ cpus_per_task</td><td>可见 CPU 数</td><td>总 CPU 预算。</td></tr>
+<tr><td><code>mem_per_cpu</code></td><td>正数（GB/CPU）</td><td>5</td><td>仅 srun 时传入 --mem-per-cpu。</td></tr>
+<tr><td><code>label</code></td><td>输出标签</td><td>&quot;NEO&quot;</td><td>模型选择名也接受 neo。GACODE_ROOT 必须指向包含 neo/bin/neo_parse.py 与 neo/src/neo 的安装；接口声明 √(2T/m) 约定。</td></tr>
+</tbody></table></div>
+<h3 id="beams3d-外部中性束源项">BEAMS3D — 外部中性束源项</h3>
+<p>几何需 <code>torflux</code> 且有 VMEC 格式 <code>wout*.nc</code>；不能只改变 T3D 的尺寸或磁场参考值而让外部程序继续使用原始磁平衡，否则会报错。HDF5 后处理按束求和，再插值到状态剖面节点，而不是求输运通量。支持接口/合成数据验证，不宣称完成真实 BEAMS3D 工况验证。</p>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">参数</th><th scope="col">类型／可选值</th><th scope="col">默认值</th><th scope="col">含义与约束</th></tr></thead><tbody>
+<tr><td><code>source</code></td><td>BEAMS3D（区分大小写）</td><td>设置 [source] 时必填</td><td>目前唯一注册的外部源；可用 [source] 单表或 [[source]] 数组。</td></tr>
+<tr><td><code>label</code></td><td>唯一源项标签</td><td>&quot;BEAMS3D&quot;</td><td>输出分项名，多个束模型需不同标签；不能用 aux、alpha、rad、coll、heating。</td></tr>
+<tr><td><code>particle_source</code></td><td>布尔值</td><td>false</td><td>是否加入热化后粒子源；启用时有功率的束同位素需匹配主离子（质量匹配容差 2%）。离子源与对应电荷权重的电子源同时构造。</td></tr>
+<tr><td><code>power_source</code></td><td>布尔值</td><td>true</td><td>是否加入电子和主离子慢化能量沉积；与 particle_source 不得同时为 false。</td></tr>
+<tr><td><code>beams3d_path</code></td><td>含可执行 xbeams3d 的目录</td><td>环境 BEAMS3D_PATH 或 &quot;.&quot;</td><td>显式 TOML 键优先。</td></tr>
+<tr><td><code>beams3d_template</code></td><td>含 &amp;BEAMS3D_INPUT 的 Fortran namelist 路径</td><td>必填</td><td>配置束能量、质量、功率、几何等本机参数；T3D 写入背景电子/离子温度（eV）、密度（m⁻³）、离子质量（kg）和 s=ρ²。</td></tr>
+<tr><td><code>beams3d_outputs</code></td><td>目录路径</td><td>&quot;beams3d&quot;</td><td>输出根。每次驾驶器和每次试算都用独立目录；从 beams3d_t3d.h5 读取径向网格、束粒子和电子/离子功率沉积。</td></tr>
+<tr><td><code>beams3d_logfile</code></td><td>文件名</td><td>&quot;beams3d.log&quot;</td><td>每个真实作业的标准输出/错误日志。</td></tr>
+<tr><td><code>run_command</code></td><td>字符串（按 argv 解析）</td><td>省略</td><td>启动器前缀；省略时直接执行。</td></tr>
+<tr><td><code>run_options</code></td><td>字符串（按 argv 解析）</td><td>&quot;&quot;</td><td>追加到 -vmec t3d -collisions 的本机参数，不得用 -depo、-hitonly、-hit_only、-plasma。</td></tr>
+<tr><td><code>implicit</code></td><td>布尔值</td><td>false</td><td>true 时对独立 n,p 扰动重算沉积，形成外部源项 Jacobian；alpha=0 或无演化剖面时不执行扰动。</td></tr>
+<tr><td><code>relative_step</code></td><td>有限实数 (0,1)</td><td>0.001</td><td>隐式源项 Jacobian 的相对剖面扰动步长。</td></tr>
+</tbody></table></div>
+</section>
+    <footer class="site-footer">T3D-lyh · 参数依据维护版源码，单位与符号约定见<a href="./#io">输入输出</a>。</footer>
+  </main>
+</div>
+</body>
+</html>

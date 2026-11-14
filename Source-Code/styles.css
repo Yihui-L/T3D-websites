@@ -178,6 +178,19 @@ details[open] summary { margin-bottom: .5rem; }
   body { font-size: 15px; }
   .hero, .topic { padding-inline: .85rem; }
 }
+.landing {
+  max-width: 1130px; margin: auto;
+  padding: clamp(1rem, 4vw, 2.8rem) var(--pad) 1rem;
+}
+.landing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1rem;
+}
+.module-guide { padding-bottom: .9rem; }
+.topic .change-title { margin: .5rem 0 .8rem; padding-top: .9rem; border-top: 1px solid var(--line); }
+.parameter-content .table-scroll { border-block: 1px solid var(--line); }
+.parameter-content table { min-width: 540px; }
+.parameter-content .param-toolbar { justify-content: start; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; }
 }
