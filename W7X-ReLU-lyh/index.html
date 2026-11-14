@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="使用相同的官方输入与 VMEC 平衡重跑 T3D-lyh，比较 W7-X ReLU 的离子温度、径向热输运和功率平衡。">
+  <meta name="color-scheme" content="light">
+  <title>W7-X ReLU 回归算例 · T3D-lyh</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <div class="wrap header-content">
+    <a class="brand" href="../">T3D-lyh</a>
+    <nav aria-label="站点与章节">
+      <a href="../Source-Code/">源码手册</a>
+      <a href="#setup">计算设置</a>
+      <a href="#comparison">官方对比</a>
+      <a href="#data">数据与复现</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="main">
+  <section class="hero" aria-labelledby="title">
+    <p class="kicker">基准算例 / Wendelstein 7-X</p>
+    <h1 id="title">W7-X ReLU 离子热输运</h1>
+    <p class="lead">在相同的官方输入和 VMEC 平衡上重跑 <code>T3D-lyh</code>，与上游随附的官方回归数据对比，检验离子温度演化和离散功率守恒。</p>
+    <div class="version">
+      <span>官方 <code>74a06df</code>（v0.1.0）</span>
+      <span>维护版 <code>d5ac1fe</code></span>
+      <span>固定 VMEC 几何</span>
+    </div>
+  </section>
+
+  <dl class="metrics" aria-label="终态比较摘要">
+    <div><dt>两版接受步数</dt><dd>8 步</dd><span>终点均为 0.374056 s</span></div>
+    <div><dt>最大离子温度差</dt><dd>16.57 eV</dd><span>终态最内侧节点</span></div>
+    <div><dt>共享界面不抵消量的绝对值</dt><dd>74.53 → 0 W</dd><span>官方 → T3D-lyh</span></div>
+  </dl>
+
+  <section class="topic" id="setup" aria-labelledby="setup-title">
+    <p class="label">01 / CONFIGURATION</p>
+    <h2 id="setup-title">相同输入，只推进氢离子温度</h2>
+    <p>输入 <a href="test-w7x-relu.in" download><code>test-w7x-relu.in</code></a> 与平衡 <a href="https://bitbucket.org/gyrokinetics/t3d/src/74a06dfdf8e005e6bc72ef79859413ba69abd626/tests/data/wout_w7x.nc"><code>wout_w7x.nc</code></a> 均与官方版本逐字节一致。这里不调用 GX、SFINCS 等外部通量求解器，也不启用维护版新增的文件通量模型。</p>
+    <div class="table-wrap" role="region" aria-label="计算设置表" tabindex="0">
+      <table>
+        <thead><tr><th scope="col">设置</th><th scope="col">取值及含义</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">径向网格</th><td><code>flux_label = "torflux"</code>，ρ 为归一化环向磁通的平方根；9 个节点，8 个活动壳层。温度边界 ρ = 0.7，最外活动通量面 ρ = 0.658824。0.7 是计算截断，不是最后闭合磁面。</td></tr>
+          <tr><th scope="row">组分与初值</th><td>电子与氢离子密度固定；电子温度剖面固定，只推进 <i>p</i><sub>H</sub> = <i>n</i><sub>H</sub><i>T</i><sub>H</sub>。氢离子初始核心／边界温度 1.0／0.8 keV，电子 6.7／0.8 keV，密度 0.35／0.29 × 10<sup>20</sup> m<sup>−3</sup>。</td></tr>
+          <tr><th scope="row">热通量</th><td><code>model = "ReLU"</code>，<code>D_neo = 0</code>；氢离子温度对数梯度阈值 0.1、斜率 1.2，电子及粒子通量斜率为零。磁轴净径向通量为零。</td></tr>
+          <tr><th scope="row">体热源与输出</th><td>只有电子–离子碰撞向氢离子传热；辅助粒子／能量源幅度为零，不启用 α 加热、辐射和湍流组分间能量交换。远程环境仅停用不可用的 ADIOS2/BP 输出，保留 NetCDF；未改物理与数值参数。</td></tr>
+          <tr><th scope="row">时间推进</th><td>归一化初始步长 <code>dtau = 0.1</code>（3.741 ms），<code>t_max = 10</code>，<code>alpha = 1</code>；Newton 阈值 0.01、容差 0.02、最多 3 次迭代。两版内部接受时刻不同，终点一致。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="formula" aria-label="离子能量守恒方程">
+      <span>³⁄₂ ∂<i>p</i><sub>H</sub>/∂<i>t</i> = −[1/<i>V</i>′(ρ)] ∂<i>𝒬</i><sub>H</sub>/∂ρ + <i>S</i><sub>coll,H</sub></span>
+    </p>
+    <p class="note"><i>𝒬</i><sub>H</sub> 是穿过整张磁面的热功率（MW），不是热流密度；<i>S</i><sub>coll,H</sub> 是局部体热源（MW/m³）。固定电子温度使电子背景相当于热库，本例不检验电子和离子总热能的自洽闭合。</p>
+  </section>
+
+  <section class="topic" id="evolution" aria-labelledby="evolution-title">
+    <p class="label">02 / ACCEPTED STATES</p>
+    <h2 id="evolution-title">维护版：热流、体热源和温度随时间的演化</h2>
+    <figure>
+      <a href="figures/time-profiles.png" aria-label="查看时序三联图完整分辨率">
+        <img src="figures/time-profiles.png" width="3124" height="1111" alt="六个接受时刻的氢离子剖面，三列依次为 ReLU 热功率、电子—离子碰撞体热源和离子温度。">
+      </a>
+      <figcaption>同色同时间。热功率在通量面，碰撞体热源和温度在径向节点；不包含 Newton 中间迭代。<a href="figures/time-profiles.pdf" download>矢量 PDF</a></figcaption>
+    </figure>
+    <p>最内侧节点的 <i>T</i><sub>H</sub> 由 0.9993 keV 升至 1.4345 keV（116.0 ms），终态为 1.4067 keV；边界始终为 0.8 keV。最外活动面热功率由 0.3263 MW 上升，116.0 ms 时为 1.4612 MW，随后回到 1.3822 MW。离子升温同时缩小电子–离子温差，碰撞体热源整体减弱。</p>
+  </section>
+
+  <section class="topic" id="comparison" aria-labelledby="compare-title">
+    <p class="label">03 / OFFICIAL REFERENCE</p>
+    <h2 id="compare-title">同一物理时刻的官方对比</h2>
+    <p>官方状态来自随附的 <a href="https://bitbucket.org/gyrokinetics/t3d/src/74a06dfdf8e005e6bc72ef79859413ba69abd626/tests/regression/ref-w7x-relu.nc"><code>ref-w7x-relu.nc</code></a>。两版的热功率、热源和储能诊断分别用各自的离散式在已接受剖面上同步重算，不直接把官方文件里未与末态同步的末行功率拿来相减。中间的时间轨迹按物理时间阅读，不能按接受步编号直接逐点相减。</p>
+    <figure>
+      <a href="figures/official-vs-lyh.png" aria-label="查看与官方比较的完整分辨率图片">
+        <img src="figures/official-vs-lyh.png" width="2030" height="612" loading="lazy" alt="官方和维护版终态离子温度对比、逐半径温差、以及累积碰撞热源与外向热功率。">
+      </a>
+      <figcaption>终点 <i>t</i> = 0.374056 s。左／中：离子温度和差值；右：各磁面内累积碰撞热源与穿过该面的热功率。</figcaption>
+    </figure>
+    <div class="table-wrap" role="region" aria-label="终态数值比较" tabindex="0">
+      <table class="numbers">
+        <thead><tr><th scope="col">终态指标</th><th scope="col">官方 v0.1.0</th><th scope="col">T3D-lyh</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">最内侧 <i>T</i><sub>H</sub>（keV）</th><td>1.423303</td><td>1.406735</td></tr>
+          <tr><th scope="row">活动域碰撞热源 <i>P</i><sub>coll</sub>（MW）</th><td>1.403188</td><td>1.384315</td></tr>
+          <tr><th scope="row">最外活动面热功率 <i>𝒬</i><sub>out</sub>（MW）</th><td>1.399212</td><td>1.382174</td></tr>
+          <tr><th scope="row">末步储能变化率 d<i>W</i><sub>H</sub>/d<i>t</i>（kW）</th><td>3.986471</td><td>2.140711</td></tr>
+          <tr><th scope="row">全域功率残差绝对值（W）</th><td>10.8496</td><td>0.1170</td></tr>
+          <tr><th scope="row">内部面未抵消量（带符号，W）</th><td>−74.5305</td><td>0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>终态两版的密度、电子温度和固定边界离子温度相同。差异主要关联 VMEC 近轴体积权重、共享通量面的离散方式，也包含不同的接受步历史和非线性迭代误差；这些因素未在本算例中逐项隔离。</p>
+    <p class="note">全域残差定义为 |d<i>W</i><sub>H</sub>/d<i>t</i> − (<i>P</i><sub>coll</sub> − <i>𝒬</i><sub>out</sub>)|，用真实末步及前一步的变步长 BDF2 历史重算。全域残差和内部面抵消缺陷是不同指标。这里验证的是回归和数值功率守恒，不是 W7-X 放电实验预测精度。</p>
+  </section>
+
+  <section class="topic" id="data" aria-labelledby="data-title">
+    <p class="label">04 / DATA &amp; REPRODUCTION</p>
+    <h2 id="data-title">数据与复现</h2>
+    <ul class="downloads">
+      <li><strong>全部 9 个状态，含初值：</strong> <a href="data/official-accepted.nc" download>官方 NetCDF</a> · <a href="data/lyh-accepted.nc" download>维护版 NetCDF</a> · <a href="data/time-history.csv" download>时间历史 CSV</a></li>
+      <li><strong>维护版径向数据：</strong> <a href="data/flux-faces.csv" download>通量面 CSV</a> · <a href="data/source-temperature-nodes.csv" download>碰撞热源和温度 CSV</a></li>
+      <li><strong>终态比较：</strong> <a href="data/final-profiles.csv" download>温度剖面 CSV</a> · <a href="data/power-balance.csv" download>径向功率 CSV</a> · <a href="data/comparison.json" download>对照指标和输入哈希 JSON</a></li>
+      <li><strong>原始配置：</strong> <a href="test-w7x-relu.in" download>官方输入</a> · <a href="https://bitbucket.org/gyrokinetics/t3d/src/74a06dfdf8e005e6bc72ef79859413ba69abd626/tests/data/wout_w7x.nc">固定 VMEC 平衡</a> · <a href="README.md">复现说明和变量字典</a></li>
+    </ul>
+    <p>NetCDF 是去除运行环境元信息后整理的物理数据导出，<code>time_s</code> 使用秒，按 <code>rho_node</code> 与 <code>rho_face</code> 分开记录。它不是 T3D 的原生 restart 文件。</p>
+    <p>使用单独的输出目录，并确保其中 <code>tests/data/wout_w7x.nc</code> 指向所选源码快照里的平衡文件。维护版在依赖已安装时可这样运行：</p>
+    <pre><code>t3d test-w7x-relu.in -l w7x-relu.out</code></pre>
+    <p>将结果与官方终点按相同的活动域与功率定义比较；不要把固定温度的边界节点计入源体积分。</p>
+  </section>
+</main>
+<footer class="footer"><div class="wrap"><a href="../Source-Code/">返回源码手册</a><span>T3D-lyh · W7-X ReLU 回归</span></div></footer>
+</body>
+</html>

@@ -1,0 +1,90 @@
+{
+  "steps": {
+    "official": 8,
+    "latest_lyh": 8
+  },
+  "time_s": {
+    "official": 0.37405577274376745,
+    "latest_lyh": 0.37405577274376745
+  },
+  "source_MW": {
+    "official": 1.4031880192661117,
+    "latest_lyh": 1.3843146945068612
+  },
+  "outer_Q_MW": {
+    "official": 1.3992123976045017,
+    "latest_lyh": 1.3821741002804238
+  },
+  "source_minus_outflow_MW": {
+    "official": 0.003975621661610029,
+    "latest_lyh": 0.00214059422643742
+  },
+  "dWdt_BDF_MW": {
+    "official": 0.003986471260375962,
+    "latest_lyh": 0.0021407112377909705
+  },
+  "global_residual_MW": {
+    "official": 1.0849598765932944e-05,
+    "latest_lyh": 1.1701135355047729e-07
+  },
+  "solver_volume_residual_MW": {
+    "official": -6.368091989630842e-05,
+    "latest_lyh": 1.1701135355047729e-07
+  },
+  "noncancelling_internal_MW": {
+    "official": -7.453051866224136e-05,
+    "latest_lyh": 0.0
+  },
+  "logged_final_Q_MW": {
+    "official": 1.4023919379889171,
+    "latest_lyh": 1.3821741002804235
+  },
+  "energy_MJ": {
+    "official": 0.10728391835618035,
+    "latest_lyh": 0.10543734722459595
+  },
+  "official_logged_source_MW": 1.4022862920960601,
+  "profile": {
+    "Ti_max_abs_keV": 0.016568447893055893,
+    "Ti_rms_keV": 0.006863915307770126,
+    "Ti_innermost_keV": [
+      1.423303190620194,
+      1.4067347427271382
+    ],
+    "Ti_at_boundary_keV": [
+      0.8,
+      0.8
+    ],
+    "rho_outer_heat_face": 0.6588235294117646,
+    "ni_and_Te_bitwise_identical": true
+  },
+  "accepted_times_s": [
+    [
+      0.0,
+      0.0037405577274376746,
+      0.011221673182313026,
+      0.026183904092063726,
+      0.041146135001814424,
+      0.07107059682131582,
+      0.1309195204603186,
+      0.2506173677383242,
+      0.37405577274376745
+    ],
+    [
+      0.0,
+      0.0037405577274376746,
+      0.011221673182313026,
+      0.026183904092063726,
+      0.05610836591156512,
+      0.11595728955056792,
+      0.1758062131895707,
+      0.2955040604675763,
+      0.37405577274376745
+    ]
+  ],
+  "provenance": {
+    "input_sha256": "6c878f0cd409b78a8d18e60b8f4f752b59d3160e6fbc560dbaeede912bd72809",
+    "equilibrium_sha256": "3ff3765e5b2d49d3b48785ee917b91ba6834b6cac28c84aa93eb11c7c9c02154",
+    "official_reference_sha256": "85f535aa4d31cebaa3376aa04c33db17852844e10fb46c28c057309cb712c2d9"
+  }
+}

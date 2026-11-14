@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="T3D-lyh：一维输运求解器的逐项修改、公开源码与 W7-X ReLU 回归。">
+  <meta name="description" content="T3D-lyh 源码手册：径向输运方程、源汇与通量模型、I/O 和完整输入参数、逐项改动。">
   <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/">
-  <title>T3D-lyh · 修改与验证手册</title>
+  <title>T3D-lyh · 源码手册</title>
   <link rel="stylesheet" href="styles.css">
   <script src="search.js" defer></script>
 </head>
@@ -23,7 +23,8 @@
     </a>
     <nav aria-label="外部链接">
       <a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码</a>
-      <a href="https://t3d.readthedocs.io/en/latest/">上游文档</a>
+      <a href="parameters.html">输入参数</a>
+      <a href="../W7X-ReLU-lyh/">W7-X 算例</a>
     </nav>
   </div>
 </header>
@@ -31,18 +32,19 @@
   <aside class="sidebar">
     <nav aria-label="本页目录">
       <p>章节目录</p>
-      <ol><li><a href="#transport"><span>01</span> 输运方程与数值求解</a></li><li><a href="#geometry"><span>02</span> 平衡与几何</a></li><li><a href="#physics"><span>03</span> 物理源项与反馈</a></li><li><a href="#closures"><span>04</span> 通量模型与并行调度</a></li><li><a href="#io"><span>05</span> 输入、重启与诊断输出</a></li><li><a href="#w7x"><span>06</span> 官方 W7-X ReLU</a></li><li><a href="#reproduce"><span>07</span> 复现与参考</a></li></ol>
+      <ol><li><a href="#transport"><span>01</span> 输运方程与数值求解</a></li><li><a href="#geometry"><span>02</span> 平衡与几何</a></li><li><a href="#physics"><span>03</span> 物理源项与反馈</a></li><li><a href="#closures"><span>04</span> 通量模型与并行调度</a></li><li><a href="#io"><span>05</span> 输入、重启与诊断输出</a></li></ol>
     </nav>
   </aside>
   <main class="content" id="main">
     <div class="hero">
       <p class="kicker">TRINITY3D · 径向输运求解器</p>
-      <h1>T3D-lyh 修改与验证手册</h1>
-      <p>T3D 用平衡几何、粒子与能量源项及径向通量闭合推进一维输运。本手册逐项说明维护版相对官方 v0.1.0 的累计修改，并注明验证边界。</p>
-      <p class="facts">上游 <code>74a06df</code> <span aria-hidden="true">→</span> 维护版 <code>d5ac1fe</code> <span aria-hidden="true">·</span> 48 条修改</p>
+      <h1>T3D-lyh 源码手册</h1>
+      <p>T3D 用平衡几何、粒子与能量源项及径向通量闭合推进一维输运。五个模块分别说明物理方程、输入输出、实现边界和相对上游 v0.1.0 的改动。</p>
+      <ul class="facts"><li>上游 <code>74a06df</code></li><li>维护版 <code>d5ac1fe</code></li><li>48 条累计改动</li></ul>
       <div class="actions">
-        <a href="#transport">查看修改</a>
-        <a href="#w7x">W7-X 基准</a>
+        <a href="#transport">输运方程</a>
+        <a href="parameters.html">完整输入参数</a>
+        <a href="../W7X-ReLU-lyh/">W7-X ReLU 算例</a>
         <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/SOURCE_VERSION.md">版本记录</a>
       </div>
     </div>
@@ -54,6 +56,20 @@
 
 <section id="transport" class="topic" aria-labelledby="transport-title">
   <h2 id="transport-title"><span>01</span> 输运方程与数值求解</h2>
+  <div class="module-guide">
+<h3>控制方程与离散</h3>
+<p>令 ρ 为径向磁通面标签，V(ρ) 为包围体积，V′=dV/dρ。组分 s 的未知量是粒子密度 nₛ 和热压 pₛ=nₛTₛ（T 按能量计）。用穿过整张磁面的向外粒子率 Γₛ 和热功率 Qₛ 写磁面平均方程：</p>
+<pre><code>∂nₛ/∂t        = Sₙ,ₛ − (1/V′) ∂Γₛ/∂ρ
+(3/2) ∂pₛ/∂t  = Sᴱ,ₛ − (1/V′) ∂Qₛ/∂ρ
+Γₛ = V′⟨Γ⃗ₛ·∇ρ⟩,   Qₛ = V′⟨q⃗ₛ·∇ρ⟩
+ΔVⱼ dUⱼ/dt  = Fⱼ₋½ − Fⱼ₊½ + ΔVⱼ Sⱼ</code></pre>
+<p>前两式中的源分别是粒子率密度和体功率密度；最后一式同时适用于 U=n 和 U=3p/2。在程序中活动壳的 ΔVⱼ 按节点几何权重离散（约为 V′ⱼΔρ）。两个壳共享同一界面通量，因此相加时内部通量精确抵消；轴面通量为零，外侧剖面节点固定，最后一个活动壳流出面是相邻节点的中点。电荷约束是 Σₛ Zₛnₛ=0；从属密度由约束重建，温度通过 pₛ/nₛ 得到。默认不推进电流、快离子分布或三维平衡。</p>
+<p><strong>时间离散。</strong> 令 D(y)=源−通量散度。对 θ（输入 <code>[time].alpha</code>）小于 1，求 (yₙ₊₁−yₙ)/h = θD(yₙ₊₁)+(1−θ)D(yₙ)。θ=0 为显式 Euler；θ=1 首步/历史重置后用后向 Euler，之后用变步长 BDF2。若 r=h/h₋，BDF2 导数为</p>
+<pre><code>[(1+2r)/(1+r) · yₙ₊₁ − (1+r) · yₙ + r²/(1+r) · yₙ₋₁] / h</code></pre>
+<p>隐式迭代对同一离散残差线性化；Newton 更新量、时间离散残差和空间稳态残差分别记录。只有接受的步进入历史，拒步恢复旧态。默认 Newton 接受容差不等于实验或网格收敛。论文参见 <a href="https://doi.org/10.1063/1.3323082">Barnes 等：TRINITY</a>、<a href="https://doi.org/10.1017/S0022377824001107">Giacomin 等：T3D 方程与准线性闭合，§4.1</a>。</p>
+<p><strong>I/O。</strong> <code>[grid]</code> 决定节点和面，<code>[time]</code> 控制时间离散，<code>[[species]]</code> 设初值、边界、演化及约束；求解器读取界面 Γ/Q 与节点源项，输出 n、p、T、时间指标和功率余额。详见<a href="parameters.html">参数表</a>。</p>
+  </div>
+  <h3 class="change-title">相对上游的改动</h3>
   <ul class="changes">
     <li><strong>变步长 BDF2</strong> — 时间系数只使用已接受的历史步长；拒步恢复剖面并重算 θ 法所需的旧时刻输运项，不把试探状态写入历史。
       <span class="ref"><a aria-label="变步长 BDF2：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Time.py">源码</a> · <a aria-label="变步长 BDF2：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_lyh_time_control.py">测试</a></span></li>
@@ -77,6 +93,12 @@
 </section>
 <section id="geometry" class="topic" aria-labelledby="geometry-title">
   <h2 id="geometry-title"><span>02</span> 平衡与几何</h2>
+  <div class="module-guide">
+<h3>磁面坐标、几何与工作范围</h3>
+<p>仿星器采用 <code>torflux</code>，即 ρ=√s、s=Φₜ/Φₜ,LCFS；有 dV/dρ=2ρ·dV/ds。若 A 是磁面面积，几何关系为 A=V′⟨|∇ρ|⟩；只在得到正确磁面投影或面积平均后，才可把热流密度换成穿面功率。代码保存 A/a²、a⟨|∇ρ|⟩ 等无量纲度量，活动壳近似体积是 a³Δρ·(A/a²)/(a⟨|∇ρ|⟩)。<code>rho_edge</code> 是指定的剖面边界，不必是 LCFS。</p>
+<p><strong>I/O。</strong> <code>[geometry]</code>/<code>[rescale]</code> 选择平衡和尺寸：<code>vmec</code> 读 <code>wout*.nc</code>（半网格 Nyquist (0,0) 雅可比提供体积导数；本版拒绝不支持的非对称文件）；<code>desc</code> 读原生平衡文件（可按后端需要导出 VMEC）；<code>geqdsk</code> 在 <code>rminor</code> 网格上由唯一兼容的 GX 或 GS2-QL 提供几何；<code>miller</code> 用兼容导入取得参数；<code>basic</code> 是解析简化几何。输出含节点/面面积、径向度量和逐帧几何记录。默认固定几何；在线 DESC 更新仅支持保持演化壳体积与参考小半径的收敛候选，不含移动磁面、压缩功或自举电流闭合。不同文件与后端的条件见<a href="parameters.html">参数表</a>。</p>
+  </div>
+  <h3 class="change-title">相对上游的改动</h3>
   <ul class="changes">
     <li><strong>VMEC 体积导数</strong> — 从半网格 Nyquist (0,0) 雅可比系数取 dV/ds，再按 ρ=√s 计算 dV/dρ；径向节点和输运面共用一致的面积／体积度量。
       <span class="ref"><a aria-label="VMEC 体积导数：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/geometry_models/VMEC.py">源码</a> · <a aria-label="VMEC 体积导数：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_vmec_source_balance.py">测试</a></span></li>
@@ -94,6 +116,18 @@
 </section>
 <section id="physics" class="topic" aria-labelledby="physics-title">
   <h2 id="physics-title"><span>03</span> 物理源项与反馈</h2>
+  <div class="module-guide">
+<h3>源与汇的物理模型</h3>
+<p>离子升温、电子降温可以来自同一个成对换热项。以 T 为能量计， <code>Sᴱ,coll,ₛ = (3/2) nₛ Σᵤ νᴱₛᵤ (Tᵤ−Tₛ)</code>。物理组分全部演化时，成对交换总和应为零；固定某个温度时，它相当于规定热库，不应声称该简化系统独立闭合总热量。径向热流不是碰撞体热源。</p>
+<ul>
+<li>辅助粒子源与辅助能量源可规定高斯形状 <code>A·exp[−(ρ−ρ₀)²/(2σ²)]</code>。若指定 <code>integrated</code>，用活动壳的 Σⱼ ΔVⱼSⱼ 反求幅值；否则使用 <code>height</code>。也可导入离线沉积或使用 BEAMS3D 在线计算。</li>
+<li>D–T α 出生功率密度是 <code>Eα nᴰ nᵀ ⟨σv⟩(Tᵣₑₗ)</code>，Eα≈3.5 MeV；两 Maxwellian 温度独立时，<code>Tᵣₑₗ=(mₜTᴰ+mᴅTᵀ)/(mᴅ+mₜ)</code>。沉积功率等于出生功率乘 <code>alpha_efficiency</code>（且需开启热反馈），再按电子/离子份额分配；聚变总出生功率为 α 出生功率约 5.03 倍。该通道不等同于求解燃耗、灰积累或快粒子输运。</li>
+<li>杂质辐射是电子能量汇，按 <code>nₑΣᵢnᵢLᵢ(Tₑ)</code> 组装；包含谱线、复合和轫致辐射的模型开启时，不重复加独立的轫致辐射 <code>∝ Zₑff nₑ²√Tₑ</code>。可另计通量后端提供的湍流组分间能量交换。</li>
+<li>可选功率或边界反馈在已接受步之间更新；Sudo 是经验密度控制，不是额外演化方程。辅助功率反馈也不读取时变文件。</li>
+</ul>
+<p><strong>I/O。</strong> <code>[physics]</code> 开关物理源，<code>[[species]].aux_particle_source / aux_power_source</code> 给规定源，<code>[[source]]</code> 选择外部沉积后端，<code>[time_dependence]</code> 控制反馈。正的热源表示向该组分加热，诊断以分项和总量分别输出；活动壳功率积分排除固定边界节点。完整<a href="parameters.html">源参数和配置</a>。</p>
+  </div>
+  <h3 class="change-title">相对上游的改动</h3>
   <ul class="changes">
     <li><strong>高斯源项归一化</strong> — 对活动壳做体积积分；显式给定总源（包括零）按活动域归一化，不把固定外节点当作沉积单元；对域外中心的截断尾部给出警告，不把几乎无重叠误当作正常输入。
       <span class="ref"><a aria-label="高斯源项归一化：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="高斯源项归一化：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_vmec_source_balance.py">测试</a></span></li>
@@ -118,6 +152,17 @@
 </section>
 <section id="closures" class="topic" aria-labelledby="closures-title">
   <h2 id="closures-title"><span>04</span> 通量模型与并行调度</h2>
+  <div class="module-guide">
+<h3>通量闭合、单位与后端</h3>
+<p>定义 κₙ=−∂ρln n、κₚ=−∂ρln p，故 κₜ=κₚ−κₙ。ReLU 热支路（关闭噪声时）采用 <code>m·sgn(κₜ)·max(|κₜ|−κc,0)^b</code>，κc 可以随 ρ 线性变化；粒子支路使用 <code>sgn(κₙ−κc)·|m(κₙ−κc)|^b</code>，不是热支路的阈下关断。可另加 <code>D_neo nκₙ</code> 和 <code>D_neo pκₚ</code>。以上是归一化闭合，不是直接输入 SI 扩散系数，亦不区分 ITG/TEM 等湍流模态。换成穿面 Γ/Q 时还要乘面几何和参考组分的局域 gyro-Bohm 因子。</p>
+<ul>
+<li><strong>内置计算：</strong> ReLU 是参数化闭合；Chang–Hinton 是解析新经典近似，需适用几何；RR 是仅补到电子热流的 κₜ³ 型模型；PowerBalance 由累计源反推平衡通量，独占使用，不是预测模型。</li>
+<li><strong>外部计算：</strong> GX 与 GS2-QL 提供湍流/准线性输运；SFINCS、KNOSOS 与 NEO 提供新经典输运。T3D 给出各面当前态及梯度，按后端需要提交扰动计算；后端的局部响应进入隐式迭代。模板和可执行程序不是外部通量表；并行与缓存只改变调度方式，不应改变方程。</li>
+<li><strong>文件给定：</strong> <code>model = &quot;Import&quot;</code> 读静态穿面 Γ（10²⁰ s⁻¹）或 Q（MW），用有符号线性插值到活动通量面，不外推；保持维度值，不给 Jacobian 增添虚假剖面导数。允许与非重复的在线分量相加，不应在回放总量后又叠加已含的模型。</li>
+</ul>
+<p><strong>I/O。</strong> <code>[[model]]</code> 可重复声明兼容的加性闭合，用唯一标签区分输出；特定后端依赖其输入模板、所需平衡和运行环境。末帧不同步的外部诊断不标为有效。计算能力与实跑验证是两件事；见<a href="parameters.html">模型与外部源完整参数</a>和<a href="#closures">逐项改动</a>。</p>
+  </div>
+  <h3 class="change-title">相对上游的改动</h3>
   <ul class="changes">
     <li><strong>ReLU</strong> — 修复反向梯度的有符号通量；开启噪声时，同一步的基值与扰动共享抽样，不依赖全局随机种子，避免噪声直接污染有限差分。
       <span class="ref"><a aria-label="ReLU：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/ReLU.py">源码</a> · <a aria-label="ReLU：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numerics_round3.py">测试</a></span></li>
@@ -142,6 +187,23 @@
 </section>
 <section id="io" class="topic" aria-labelledby="io-title">
   <h2 id="io-title"><span>05</span> 输入、重启与诊断输出</h2>
+  <div class="module-guide">
+<h3>输入 → 计算 → 输出</h3>
+<ol>
+<li><strong>输入</strong>：主文件是扩展名为 <code>.in</code> 的 TOML。设置网格、时间、组分与约束、平衡、通量和源模型。文件路径通常相对进程工作目录。不要把模型名、后端模板和径向数据文件当成同一类参数。</li>
+<li><strong>计算</strong>：初始化剖面与定值导入；每次试探在同一几何上求源和输运，组装离散残差，接受或回退。默认外部文件只选择一个径向切片；<code>frame</code> 是初始化选择，不是随模拟时钟推进的索引。</li>
+<li><strong>输出</strong>：<code>.out</code> 是终端日志；默认快照 <code>*.log.npy</code>（Python pickle，只从可信来源读）；<code>*.nc</code> 为可选 NetCDF4（默认关）；<code>*.bp/</code> 为 ADIOS2（默认开，可显式关闭写出）。接受步检查点频率由 <code>[log].n_write</code> 决定；各输出形态由同一输出 stem 派生而不会共用文件名。</li>
+</ol>
+<div class="table-scroll" tabindex="0" aria-label="横向滚动参数表"><table><thead><tr><th scope="col">数据</th><th scope="col">所在网格与物理单位</th><th scope="col">输入／输出中的名字</th></tr></thead><tbody>
+<tr><td>组分密度、温度、压强</td><td>节点；10²⁰ m⁻³、keV、10²⁰ keV m⁻³</td><td><code>density</code>、<code>temperature</code>；输出 <code>n_*</code>、<code>T_*</code>、<code>p_*</code></td></tr>
+<tr><td>辅助粒子源、体热源</td><td>壳层节点；10²⁰ m⁻³ s⁻¹、MW/m³</td><td><code>aux_particle_source</code>、<code>aux_power_source</code>；<code>Sn_*</code>、<code>Sp_*</code> 输出是归一化本地值，乘对应 <code>Sn_ref_SI20</code>、<code>P_ref_MWm3</code> 转为物理单位</td></tr>
+<tr><td>穿面的粒子率、热功率</td><td>界面；10²⁰ s⁻¹、MW</td><td><code>particle_flux</code>、<code>heat_flux</code>；<code>Gam_SI20_*</code>、<code>Q_MW_*</code> 已有物理单位。不能用 <code>pflux_*</code>、<code>qflux_*</code>（gyro-Bohm）代替</td></tr>
+<tr><td>时间及有效性</td><td>时间帧；<code>t</code> 以 <code>t_ref</code> 归一化</td><td><code>t_step_idx</code>、<code>t_iter_idx</code>、<code>t_diagnostics_valid</code>；查已接受态时选 <code>t_iter_idx=0</code> 并核对有效标志</td></tr>
+</tbody></table></div>
+<p><strong>导入格式。</strong> ASCII <code>columns</code> 是空白分列文本（<code>#</code> 注释；<code>divide_by</code> 按列换单位）；节点初态插值、辅助源区间平均、通量面线性插值是不同操作。T3D <code>.nc/.npy/.bp</code> 用 <code>frame</code> 取一帧；旧源单位先还原再归一化，通量只读有量纲诊断。若从 T3D 快照恢复 Miller 几何，需保存同一径向网格的 Miller 几何对象的 <code>.npy</code>。TRANSP u-file 与 JETTO NetCDF 另可选时间切片用于剖面/源导入，不走通用通量表分支。运行期时变文件读取尚未实现。</p>
+<p><strong>复现与定位。</strong> 从对应源码根目录按 <code>t3d case.in -l case.out</code> 或已安装环境中的 <code>python -m t3d case.in</code> 启动；主输入不能脱离其相对文件路径。详细<a href="parameters.html">输入参数表</a>包括各组默认值、允许值、单位、后端环境和兼容性；用于实验性改模前先核对目标后端的验证边界。</p>
+  </div>
+  <h3 class="change-title">相对上游的改动</h3>
   <ul class="changes">
     <li><strong>重启单位与网格</strong> — 旧归一化量先还原到物理单位再用新参考量归一化，兼容旧 t_ref；拒绝坐标不匹配、缺测或掩蔽数据；变网格用壳层重叠映射，不声称跨几何体积守恒。
       <span class="ref"><a aria-label="重启单位与网格：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py">源码</a> · <a aria-label="重启单位与网格：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py">测试</a></span></li>
@@ -157,37 +219,6 @@
     <li><strong>TOML 写回与运行入口</strong> — 字符串、嵌套表和数组可写回并重新读入。源码快照可用 python -m t3d 启动；输入扩展名错误返回非零且不创建输出日志。<span class="ref"> <a aria-label="TOML 写回与运行入口：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py">源码</a> · <a aria-label="TOML 写回与运行入口：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
     <li><strong>TRANSP / JETTO 导入</strong> — TRANSP 用质量和电荷辨认离子，不用电子密度补缺；处理单字符串与多源通道，校验径向网格和单位。JETTO 缺测值不再被当作物理数据。<span class="ref"> <a aria-label="TRANSP / JETTO 导入：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py">源码</a> · <a aria-label="TRANSP / JETTO 导入：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
     <li><strong>模型标签与失败诊断</strong> — 单表和数组语法用同一诊断标签和计数，检查复合变量名碰撞；计算失败后不保留上一帧的有效诊断标记。<span class="ref"> <a aria-label="模型标签与失败诊断：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/FluxModels.py">源码</a> · <a aria-label="模型标签与失败诊断：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py">测试</a></span></li>
-  </ul>
-</section>
-<section id="w7x" class="topic" aria-labelledby="w7x-title">
-  <h2 id="w7x-title"><span>06</span> 官方 W7-X ReLU</h2>
-  <p>两版各接受 8 步并到达 0.37405577 s；中间接受时刻不同。只演化离子温度，密度、电子温度和外侧离子温度一致。源项来自规定电子剖面的碰撞能量交换。</p>
-  <div class="table-scroll" role="region" aria-label="W7-X 终态对照表" tabindex="0">
-    <table class="comparison">
-      <caption>使用各自终态剖面重算；最外输运面 ρ = 0.65882353。</caption>
-      <thead><tr><th scope="col">终态指标</th><th scope="col">官方参考</th><th scope="col">T3D-lyh</th></tr></thead>
-      <tbody><tr><th scope="row">最内点离子温度（keV）</th><td>1.42330319</td><td>1.40673474</td></tr><tr><th scope="row">演化域净离子热源（MW）</th><td>1.403188</td><td>1.384315</td></tr><tr><th scope="row">最外输运面向外热流（MW）</th><td>1.399212</td><td>1.382174</td></tr><tr><th scope="row">BDF2 储能变化率（kW）</th><td>3.98647</td><td>2.14071</td></tr><tr><th scope="row">功率平衡残差绝对值（W）</th><td>10.85</td><td>0.117</td></tr><tr><th scope="row">内部界面未抵消量绝对值（W）</th><td>74.53</td><td>0（舍入级）</td></tr></tbody>
-    </table>
-  </div>
-  <figure>
-    <img src="w7x-official-vs-lyh.png" width="2030" height="612" loading="lazy" alt="W7-X 终态离子温度、与官方差值及活动域累计净热源和向外热流三联图">
-    <figcaption>终态离子温度最大差 16.57 eV，在最内网格点。<a href="profiles.csv">剖面数据</a> · <a href="power-balance.csv">功率数据</a></figcaption>
-  </figure>
-  <ul class="changes">
-    <li><strong>功率账口径</strong> — 用实际接受步计算 BDF2 储能变化率；近轴体积权重与共享界面修正是主要差异。不能把离散功率残差降幅解读为实验精度提升。</li>
-    <li><strong>本轮：文件通量</strong> — 195 项中 191 通过、4 跳过（GX、GS2、KNOSOS、真实 ADIOS2），其中新增 12 项；等效源对照、共享面守恒、符号、单位、NC/NPY 回放均通过。官方 W7-X ReLU 最新版与改动前 -lyh 的摘要和接受步历史逐字节相同。</li>
-    <li><strong>前一轮实跑</strong> — 179 项通过、4 项跳过；最终一轮复查未发现新的可复现缺陷。SFINCS 在两处 W7-X 磁面上通过单进程 CPU 冒烟测试，DESC 固定平衡 ReLU 实跑通过；均未验证完整外部耦合或移动磁面输运。</li>
-    <li><strong>附加回归</strong> — 动理学电子 W7-X ReLU 变体 7 步到终点并逐点保持准中性。D/T/C 变体的输入电荷份额为 1.05，程序明确拒绝原始输入。</li>
-    <li><strong>未实跑</strong> — GX、GS2、BEAMS3D、KNOSOS、NEO、GPU/Slurm 和 ADIOS2。相关改动只验证了接口、合成数据或模拟调度。</li>
-  </ul>
-  <p class="notice">这个算例不验证实验精度、外部求解器的物理收敛或并行扩展性。</p>
-</section>
-<section id="reproduce" class="topic" aria-labelledby="reproduce-title">
-  <h2 id="reproduce-title"><span>07</span> 复现与参考</h2>
-  <ul class="changes">
-    <li><strong>复现官方输入</strong> — 在源码目录使用 <code>t3d tests/regression/test-w7x-relu.in</code>。无 ADIOS2 时，在另存的输入副本中关闭 <code>output_adios2</code>，不要修改官方输入。</li>
-    <li><strong>版本固定</strong> — 源码树不含原始 Git 元数据，安装时如有版本识别问题可参照 <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/README.md">可编辑文档的安装说明</a>。源码身份以记录的 Git SHA 为准。</li>
-    <li><strong>参考</strong> — <a href="https://t3d.readthedocs.io/en/latest/QuickReLU.html">官方 W7-X ReLU 教程</a> · <a href="https://doi.org/10.1063/1.3323082">TRINITY 隐式输运方法</a> · <a href="https://doi.org/10.1017/S0022377824001107">GS2 准线性闭合</a> · <a href="https://doi.org/10.1017/S0022377825000339">T3D 集成模拟</a></li>
   </ul>
 </section>
 <footer class="site-footer">
