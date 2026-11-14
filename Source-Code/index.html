@@ -39,7 +39,7 @@
       <p class="kicker">TRINITY3D · 径向输运求解器</p>
       <h1>T3D-lyh 修改与验证手册</h1>
       <p>T3D 用平衡几何、粒子与能量源项及径向通量闭合推进一维输运。本手册逐项说明维护版相对官方 v0.1.0 的累计修改，并注明验证边界。</p>
-      <p class="facts">上游 <code>74a06df</code> <span aria-hidden="true">→</span> 维护版 <code>6ecc1c6</code> <span aria-hidden="true">·</span> 47 条修改</p>
+      <p class="facts">上游 <code>74a06df</code> <span aria-hidden="true">→</span> 维护版 <code>d5ac1fe</code> <span aria-hidden="true">·</span> 48 条修改</p>
       <div class="actions">
         <a href="#transport">查看修改</a>
         <a href="#w7x">W7-X 基准</a>
@@ -145,6 +145,7 @@
   <ul class="changes">
     <li><strong>重启单位与网格</strong> — 旧归一化量先还原到物理单位再用新参考量归一化，兼容旧 t_ref；拒绝坐标不匹配、缺测或掩蔽数据；变网格用壳层重叠映射，不声称跨几何体积守恒。
       <span class="ref"><a aria-label="重启单位与网格：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py">源码</a> · <a aria-label="重启单位与网格：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py">测试</a></span></li>
+    <li><strong>文件通量导入</strong> — 新增文件通量模型 Import：复用 [import] 与组分级 import/keys，读取每张磁面的有符号粒子率 (10^20/s) 与热功率 (MW)；在共享通量面线性插值，不外推，不折作体源。支持 ASCII 与已有 T3D 帧，及与 ReLU 相加；固定通量不影响 Newton Jacobian。<span class="ref"> <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/docs/FluxModels.rst">配置</a> · <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/Import.py">源码</a> · <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_imported_flux.py">测试</a></span></li>
     <li><strong>输入解析</strong> — 保留实际 TOML／文件错误，不用错误的字符串回退覆盖原因；ASCII 多列源项求和，兼容 JETTO 时间键。
       <span class="ref"><a aria-label="输入解析：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py">源码</a> · <a aria-label="输入解析：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_import.py">测试</a></span></li>
     <li><strong>检查点与输出路径</strong> — 每 N 个接受步写检查点，NPY 和 NetCDF 写完才替换上一份，BP 单独路径；各格式不会共用同一个文件名。
@@ -174,7 +175,8 @@
   </figure>
   <ul class="changes">
     <li><strong>功率账口径</strong> — 用实际接受步计算 BDF2 储能变化率；近轴体积权重与共享界面修正是主要差异。不能把离散功率残差降幅解读为实验精度提升。</li>
-    <li><strong>实跑</strong> — 179 项通过、4 项跳过；最终一轮复查未发现新的可复现缺陷。SFINCS 在两处 W7-X 磁面上通过单进程 CPU 冒烟测试，DESC 固定平衡 ReLU 实跑通过；均未验证完整外部耦合或移动磁面输运。</li>
+    <li><strong>本轮：文件通量</strong> — 195 项中 191 通过、4 跳过（GX、GS2、KNOSOS、真实 ADIOS2），其中新增 12 项；等效源对照、共享面守恒、符号、单位、NC/NPY 回放均通过。官方 W7-X ReLU 最新版与改动前 -lyh 的摘要和接受步历史逐字节相同。</li>
+    <li><strong>前一轮实跑</strong> — 179 项通过、4 项跳过；最终一轮复查未发现新的可复现缺陷。SFINCS 在两处 W7-X 磁面上通过单进程 CPU 冒烟测试，DESC 固定平衡 ReLU 实跑通过；均未验证完整外部耦合或移动磁面输运。</li>
     <li><strong>附加回归</strong> — 动理学电子 W7-X ReLU 变体 7 步到终点并逐点保持准中性。D/T/C 变体的输入电荷份额为 1.05，程序明确拒绝原始输入。</li>
     <li><strong>未实跑</strong> — GX、GS2、BEAMS3D、KNOSOS、NEO、GPU/Slurm 和 ADIOS2。相关改动只验证了接口、合成数据或模拟调度。</li>
   </ul>

@@ -48,6 +48,10 @@ class TransportSolver():
         if self.balance_closure:
             return np.zeros((y.size, y.size))
         scratch = species.profile_scratch()
+        # Fixed physical throughputs have zero derivative. Omit them from
+        # scratch residuals so a large fixed term cannot swamp small slopes.
+        for item in scratch.get_species_list():
+            item.prescribed_fluxes = {}
         keys = [(key, False) for key in species.n_evolve_keys]
         keys += [(key, True) for key in species.T_evolve_keys]
         rows = {item.type: i for i, item in enumerate(species.get_species_list())}

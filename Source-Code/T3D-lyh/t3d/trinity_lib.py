@@ -73,6 +73,7 @@ class TrinityEngine():
 
         # set initial profiles
         self.species.init_profiles_and_sources(self.geometry, self.norms, self.imported)
+        self.flux_models.initialize_import(self.species, self.imported)
         if self.physics.scale_density_to is not None:
             if self.source_models.get_sources_list():
                 raise ValueError("Sudo density control with external heating requires coupled iteration")
@@ -149,7 +150,7 @@ class TrinityEngine():
         # A diagnostic row is not a new transport take. Do not submit an
         # external job or alter a lagged/cached closure solely for logging.
         immediate_models = {"t3d.flux_models.ReLU", "t3d.flux_models.ChangHintonNeoclassical",
-                            "t3d.flux_models.RR", "t3d.flux_models.PowerBalance"}
+                            "t3d.flux_models.RR", "t3d.flux_models.PowerBalance", "t3d.flux_models.Import"}
         if (self.source_models.get_sources_list()
                 or any(type(m).__module__ not in immediate_models
                        for m in self.flux_models.get_models_list())):

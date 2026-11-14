@@ -625,6 +625,11 @@ node. This preserves the integral in the radial coordinate over the overlap,
 not necessarily the volume-integrated source if the geometry or domain
 changes. Select a frame with available source diagnostics.
 
+For prescribed transport throughputs, use the same ``[import]`` section with
+species-level ``particle_flux`` and ``heat_flux`` bindings and the
+:ref:`Import flux model <import_flux_model>`. Fluxes use the face grid and
+physical whole-surface rates, not the auxiliary-source cell averages.
+
 .. list-table::
    :widths: 20 20 50 10
    :width: 100

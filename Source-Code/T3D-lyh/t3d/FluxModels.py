@@ -23,12 +23,22 @@ class FluxModelDict():
         from t3d.flux_models.RR import RechesterRosenbluth
         from t3d.flux_models.SFINCS import SFINCS_FluxModel
         from t3d.flux_models.PowerBalance import PowerBalance_FluxModel
+        from t3d.flux_models.Import import Import_FluxModel
 
         config = inputs.get('model', {})
         if isinstance(config,dict):
             config = [config]
         if not isinstance(config,list) or any(not isinstance(pars,dict) for pars in config):
             raise TypeError("model must be a table or an array of tables")
+        species_config = inputs.get('species', [])
+        if isinstance(species_config, dict):
+            species_config = [species_config]
+        import_requested = any(
+            isinstance(table, dict) and table.get('import') is True
+            for species in species_config if isinstance(species, dict)
+            for table in (species.get('particle_flux'), species.get('heat_flux')))
+        if import_requested and not any(pars.get('model') in ('Import', 'import') for pars in config):
+            raise ValueError('Species flux import requires [[model]] model = "Import".')
         self.models_dict = OrderedDict()
 
         models = {
@@ -46,6 +56,8 @@ class FluxModelDict():
             "RR": RechesterRosenbluth,
             "SFINCS": SFINCS_FluxModel,
             "sfincs": SFINCS_FluxModel,
+            "Import": Import_FluxModel,
+            "import": Import_FluxModel,
             "PowerBalance": PowerBalance_FluxModel
         }
 
@@ -55,7 +67,7 @@ class FluxModelDict():
                 raise ValueError(f"Unknown flux model {key!r}")
             label = pars.get('label', {'gx':'GX','GS2-QL':'GS2','gs2-ql':'GS2','relu':'ReLU',
                                        'knosos':'KNOSOS','neo':'NEO','sfincs':'SFINCS',
-                                       'ChangHinton':'Chang-Hinton'}.get(key,key))
+                                       'ChangHinton':'Chang-Hinton', 'import':'Import'}.get(key,key))
             if not isinstance(label,str) or not label or '/' in label:
                 raise ValueError(f"Invalid flux model label {label!r}")
             model = models[key](pars, grid, time)
@@ -63,6 +75,8 @@ class FluxModelDict():
             if label in self.models_dict:
                 raise ValueError(f"Duplicate flux model label {label!r}; assign unique labels.")
             self.models_dict[label] = model
+        if sum(isinstance(model, Import_FluxModel) for model in self.models_dict.values()) > 1:
+            raise ValueError("Configure the Import flux model only once; use species keys to combine columns.")
         self.N_models = len(self.models_dict)
 
         # check for compatibility of sqrt(2) v_th conventions
@@ -93,6 +107,12 @@ class FluxModelDict():
         return list of all elements of models_dict. each element is a FluxModel (sub)class member
         '''
         return self.models_dict.values()
+
+    def initialize_import(self, species, imported):
+        from t3d.flux_models.Import import Import_FluxModel
+        models = [m for m in self.get_models_list() if isinstance(m, Import_FluxModel)]
+        if models:
+            models[0].initialize(species, imported)
 
 
 class FluxModel(ABC):

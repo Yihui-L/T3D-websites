@@ -553,13 +553,15 @@ class Logger:
             self.log['n_'+tag].append(s.n().profile.copy())
             self.log['p_'+tag].append(s.p().profile.copy())
             self.log['T_'+tag].append(s.T().profile.copy())
-            self.log['pflux_'+tag].append(diagnostic(s.pflux))
-            self.log['qflux_'+tag].append(diagnostic(s.qflux))
-            self.log['heat_'+tag].append(diagnostic(s.heat))
+            raw = (s.pflux, s.qflux, s.heat)
+            flux_names = ('pflux', 'qflux', 'heat')
+            values = s.flux_diagnostics_gb(species.ref_species, self.geo) if valid else raw
+            for name, value in zip(flux_names, values):
+                self.log[name+'_'+tag].append(diagnostic(value))
             for label in self.log['flux_model_labels']:
-                self.log['pflux_'+label+'_'+tag].append(diagnostic(s.pflux_labeled[label] if valid else s.pflux))
-                self.log['qflux_'+label+'_'+tag].append(diagnostic(s.qflux_labeled[label] if valid else s.qflux))
-                self.log['heat_'+label+'_'+tag].append(diagnostic(s.heat_labeled[label] if valid else s.heat))
+                values = s.flux_diagnostics_gb(species.ref_species, self.geo, label=label) if valid else raw
+                for name, value in zip(flux_names, values):
+                    self.log[name+'_'+label+'_'+tag].append(diagnostic(value))
 
             for name, values in zip(('aLn', 'aLT', 'aLp'), gradients):
                 self.log[name+'_'+tag].append(values[index].copy())

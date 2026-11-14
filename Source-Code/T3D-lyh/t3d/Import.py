@@ -103,6 +103,31 @@ class Import():
 
         return self._source_on_grid(rho, Sp, interpolate)
 
+    def get_particle_flux(self, keys=None, tag=None):
+        """Physical particle throughput on faces, in 10^20 s^-1."""
+        return self._flux_on_faces('particle', keys, tag)
+
+    def get_heat_flux(self, keys=None, tag=None):
+        """Physical energy throughput on faces, in MW."""
+        return self._flux_on_faces('heat', keys, tag)
+
+    def _flux_on_faces(self, kind, keys, tag):
+        if self.type not in ('ascii', 'trinity'):
+            raise ValueError("Flux import requires [import] type='columns' or 'trinity'.")
+        rho, values = self.imported.get_face_flux(kind, keys, tag)
+        rho, values = self._check_profile(rho, values)
+        if rho[0] < 0. or rho[-1] > 1.:
+            raise ValueError("Flux import rho must be in [0, 1].")
+        if rho[0] == 0. and values[0] != 0.:
+            raise ValueError(f"Imported {kind} flux for {tag} must be zero at the magnetic axis.")
+        faces = self.grid.midpoints
+        tol = 16*np.finfo(float).eps
+        if faces[0] < rho[0]-tol or faces[-1] > rho[-1]+tol:
+            raise ValueError(
+                f"Imported {kind} flux for {tag} must cover all transport faces "
+                f"([{faces[0]:.8g}, {faces[-1]:.8g}]); extrapolation is not allowed.")
+        return np.interp(faces, rho, values)
+
     def _source_on_grid(self, rho, profile, interpolate):
         rho, profile = np.asarray(rho), np.asarray(profile)
         if (rho.ndim != 1 or rho.size < 2 or profile.shape != rho.shape
@@ -313,6 +338,30 @@ class TrinityReader():
     def get_pressure_source(self, keys=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
         return self._restart_source(keys, tag, 'Sp_aux', 'P_ref_MWm3', norms)
 
+    def get_face_flux(self, kind, keys, tag):
+        # Only diagnostics with physical throughput units, never qflux/pflux [GB].
+        prefix, unit = ('Gam', 'SI20') if kind == 'particle' else ('Q', 'MW')
+        name = keys if keys is not None else f'{prefix}_{unit}_{tag}'
+        if not isinstance(name, str) or not name.startswith(prefix+'_') or f'_{unit}_' not in name:
+            raise ValueError(f"Trinity {kind} flux requires one physical diagnostic name ({prefix}_{unit}_<tag>).")
+        try:
+            valid = self.read_data('time', 't_diagnostics_valid')
+        except KeyError:
+            pass  # Older official outputs predate the validity field.
+        else:
+            if np.asarray(valid).size != 1 or np.asarray(valid).item() != 1:
+                raise ValueError(f"Trinity flux diagnostics are unavailable at frame {self.frame}.")
+        if self.output_format == self.PICKLE:
+            faces = self.data['grid'].get('midpoints')
+        elif self.output_format == self.NETCDF4:
+            grid = self.data['grid']
+            faces = grid['midpoints'][:] if 'midpoints' in grid.variables else None
+        else:
+            faces = self.data.read('grid/midpoints') if 'grid/midpoints' in self.data.available_variables() else None
+        if faces is None:
+            faces = (self.rho[:-1] + self.rho[1:])/2
+        return faces, self.read_data('species', name)
+
     def get_geometry(self, geo, grid, interpolate=True):
         if self.output_format != self.PICKLE:
             raise NotImplementedError('Importing a geometry object requires a Trinity .npy output file.')
@@ -407,6 +456,18 @@ class AsciiColumnReader():
 
     def get_pressure_source(self, keys=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
         return self._columns_source(keys, tag, 'Sp_aux', 1. if norms is None else norms.P_ref_MWm3)
+
+
+    def get_face_flux(self, kind, keys, tag):
+        if 'rho' not in self.columns:
+            raise ValueError("ASCII flux import requires an explicit 'rho' column.")
+        prefix = 'Gam_SI20' if kind == 'particle' else 'Q_MW'
+        names = [f'{prefix}_{tag}'] if keys is None else ([keys] if isinstance(keys, str) else keys)
+        if (not isinstance(names, list) or not names
+                or any(not isinstance(name, str) or not name or name == 'rho' for name in names)
+                or len(set(names)) != len(names)):
+            raise ValueError("Flux import keys must be a column name or a list of unique flux column names.")
+        return self._columns_source(names, tag, prefix, 1.)
 
 
 class JettoReader():

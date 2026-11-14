@@ -97,6 +97,69 @@ model = "KNOSOS"
 model = "ReLU"
 --------------
 
+.. _import_flux_model:
+
+model = "Import" (T3D-lyh)
+---------------------------
+
+Read prescribed **throughputs across entire flux surfaces** and add them to
+the transport equations as fluxes, not as volumetric sources. This is a
+static data replay, not a gradient-dependent closure.
+
+.. code-block:: toml
+
+  [[model]]
+  model = "Import"
+
+  [[species]]
+  type = "hydrogen"
+  temperature = { core = 1.5, edge = 1.0, evolve = true }
+  heat_flux = { import = true, keys = "Q_H" }
+  # For a species with an independently evolved density, use:
+  # particle_flux = { import = true, keys = "Gam_H" }
+
+  [import]
+  type = "columns"
+  file = "throughput.dat"
+  columns = ["rho", "Q_H"]
+
+The snippet belongs in a complete T3D input, with other species and
+geometry supplied as usual. A possible ``throughput.dat`` is::
+
+  # rho       Q_H (MW)
+  0.0         0.0
+  0.3         0.08
+  0.6         0.26
+  1.0         0.32
+
+- Give signed outward heat power in MW and particle rate in ``10^20 s^-1``
+  after any ``divide_by`` conversion. Neither flux density nor an already
+  normalized gyro-Bohm flux is accepted in place of throughputs.
+- ASCII input is whitespace-separated and needs a finite, strictly increasing
+  ``rho`` column in the target ``[grid].flux_label`` convention. Files must
+  cover all active transport faces; interpolation is linear on faces, not
+  cell averaging. An axis row is optional, but its throughput must be zero
+  if supplied. Negative values represent inward flow.
+- ``keys`` may name one column or list distinct additive columns. If omitted,
+  the defaults are ``Gam_SI20_<tag>`` and ``Q_MW_<tag>``.
+- With ``type = 'trinity'``, select a saved frame using ``frame`` (default
+  ``-1``). Defaults are the same dimensional diagnostic names; for a labeled
+  component, use for example ``keys = 'Q_ReLU_MW_H'``. Replay requires that
+  the physical diagnostic exists and is available in that frame; a native
+  file that stores only gyro-Bohm flux is insufficient. Only load trusted
+  ``.npy`` files: that T3D format uses Python pickle.
+- A flux binding requires the corresponding independently evolved equation.
+  Select particle throughput on the independent species, not a density
+  reconstructed by quasineutrality or a profile link.
+- A single Import model can coexist with additive models such as ReLU and
+  with auxiliary sources, including source columns in the same ASCII file.
+  Do not select a replayed *total* in addition to models already included in
+  that total. ``PowerBalance`` is a standalone option, not additive.
+- Imported dimensional flux is fixed during transport iteration and has no
+  profile Jacobian contribution. Shared faces and zero axis flux are
+  preserved; outputs include ``Gam_Import_SI20_<tag>`` / ``Q_Import_MW_<tag>``
+  by default, or use the configured model label instead of ``Import``.
+
 .. _add_model:
 
 Adding New Flux Models

@@ -730,6 +730,7 @@ class SpeciesDict():
             s.pflux = FluxProfile(0., self.grid)
             s.qflux = FluxProfile(0., self.grid)
             s.heat = FluxProfile(0., self.grid)
+            s.prescribed_fluxes = {}
             for t in self.get_species_list():
                 s.dpflux_dkn[t.type] = FluxProfile(0., self.grid)
                 s.dpflux_dkT[t.type] = FluxProfile(0., self.grid)
@@ -752,6 +753,17 @@ class SpeciesDict():
                     s.heat_labeled[label] = FluxProfile(heat_sj[i, :], self.grid)
                 else:
                     s.heat_labeled[label] = FluxProfile(0.0, self.grid)
+
+    def add_prescribed_flux(self, fn_sj, fp_sj, label):
+        """Add physical throughputs already converted to solver face units."""
+        expected = (self.N_species, len(self.grid.midpoints))
+        fn, fp = (np.asarray(values, dtype=float) for values in (fn_sj, fp_sj))
+        if any(values.shape != expected or not np.all(np.isfinite(values)) for values in (fn, fp)):
+            raise ValueError(f"Prescribed fluxes require finite particle and pressure arrays of shape {expected}.")
+        for i, s in enumerate(self.get_species_list()):
+            if label in s.prescribed_fluxes:
+                raise ValueError(f"Duplicate prescribed flux contribution {label!r}.")
+            s.prescribed_fluxes[label] = (FluxProfile(fn[i], self.grid), FluxProfile(fp[i], self.grid))
 
     def add_dflux_dkn(self, stype, dpflux_dkn_sj, dqflux_dkn_sj, dheat_dkn_sj=None):
         for i, s in enumerate(self.get_species_list()):
@@ -1070,6 +1082,17 @@ class Species():
         self.p_relu_flux_slope1 = p_relu.get('slope1', 0.0)
         self.p_relu_noise_frac = p_relu.get('noise_frac', 0.0)
 
+        # Match auxiliary-source input style without confusing fluxes with volumetric sources.
+        self.flux_import = {}
+        for field in ('particle_flux', 'heat_flux'):
+            table = sp.get(field, {})
+            if (not isinstance(table, dict) or set(table) - {'import', 'keys'}
+                    or not isinstance(table.get('import', False), bool)
+                    or ('keys' in table and not table.get('import', False))):
+                raise ValueError(f"Species {self.type} {field} requires a table with import=true and optional keys.")
+            self.flux_import[field] = table
+        self.prescribed_fluxes = {}
+
         # init flux profiles with zeros. these will be set by SpeciesDict.add_flux
         self.pflux = FluxProfile(0, grid)
         self.qflux = FluxProfile(0, grid)
@@ -1348,17 +1371,44 @@ class Species():
 
         return tuple(k.toFluxProfile(positive=False) for k in (kap_n_grid, kap_T_grid, kap_p_grid))
 
+    def _prescribed_face(self, channel, label):
+        prescribed = self.prescribed_fluxes
+        if label is not None:
+            return prescribed[label][channel] if label in prescribed else 0.
+        return sum(faces[channel] for faces in prescribed.values())
+
+    def _particle_face_factor(self, ref_species, geo):
+        return (geo.area/geo.Btor**2).plus()*(ref_species.p()**1.5/ref_species.n()**0.5).plus()
+
+    def _heat_face_factor(self, ref_species, geo):
+        return 2./3.*(geo.area/geo.Btor**2).plus()*(ref_species.p().plus()**2.5/ref_species.n().plus()**1.5)
+
+    def flux_diagnostics_gb(self, ref_species, geo, label=None):
+        """Return gyro-Bohm views without feeding fixed throughputs into Newton."""
+        if label is None:
+            pflux, qflux, heating = self.pflux, self.qflux, self.heat
+        elif label in self.prescribed_fluxes:
+            pflux = qflux = heating = FluxProfile(0., self.pflux.grid)
+        else:
+            pflux, qflux, heating = (profiles[label] for profiles in
+                                     (self.pflux_labeled, self.qflux_labeled, self.heat_labeled))
+        fn, fp = (self._prescribed_face(i, label) for i in range(2))
+        if isinstance(fn, FluxProfile) and np.any(fn.profile):
+            pflux = pflux + fn/self._particle_face_factor(ref_species, geo)
+        if isinstance(fp, FluxProfile) and np.any(fp.profile):
+            qflux = qflux + fp/self._heat_face_factor(ref_species, geo)
+        return pflux, qflux, heating
+
     # flux vector F_n (normalized particle flux)
     def Fn_plus(self, ref_species, geo, label=None):
         # returns FluxProfile with fluxes evaluated at j+1/2
-        if label is not None:
-            pflux = self.pflux_labeled[label]
-        else:
-            pflux = self.pflux
+        fixed = self._prescribed_face(0, label)
+        if label in self.prescribed_fluxes:
+            return fixed
+        pflux = self.pflux if label is None else self.pflux_labeled[label]
         if self.evolve_density:
-            return (geo.area/geo.Btor**2).plus()*(ref_species.p()**1.5/ref_species.n()**0.5).plus()*pflux.plus()
-        else:
-            return 0*pflux
+            return self._particle_face_factor(ref_species, geo)*pflux.plus() + fixed
+        return 0*pflux
 
     def Fn_minus(self, ref_species, geo, label=None):
         # Shift the complete throughput to share identical faces and have an
@@ -1366,27 +1416,31 @@ class Species():
         return self.Fn_plus(ref_species, geo, label=label).minus()
 
     def Fn_grid(self, ref_species, geo, label=None):
+        # Prescribed throughputs live on faces, so interpolate that contribution separately.
+        fixed = self._prescribed_face(0, label)
+        if label in self.prescribed_fluxes:
+            return fixed.toGridProfile()
         # returns GridProfile with fluxes evaluated at j
         if label is not None:
             pflux = self.pflux_labeled[label]
         else:
             pflux = self.pflux
         if self.evolve_density:
-            return (geo.area/geo.Btor**2*pflux).toGridProfile()*(ref_species.p()**1.5/ref_species.n()**0.5)
+            modeled = (geo.area/geo.Btor**2*pflux).toGridProfile()*(ref_species.p()**1.5/ref_species.n()**0.5)
+            return modeled + fixed.toGridProfile() if isinstance(fixed, FluxProfile) else modeled
         else:
             return 0*pflux.toGridProfile()
 
     # flux vector F_p (normalized heat flux)
     def Fp_plus(self, ref_species, geo, label=None):
         # returns FluxProfile with fluxes evaluated at j+1/2
-        if label is not None:
-            qflux = self.qflux_labeled[label]
-        else:
-            qflux = self.qflux
+        fixed = self._prescribed_face(1, label)
+        if label in self.prescribed_fluxes:
+            return fixed
+        qflux = self.qflux if label is None else self.qflux_labeled[label]
         if self.evolve_temperature:
-            return 2./3.*(geo.area/geo.Btor**2).plus()*(ref_species.p().plus()**2.5/ref_species.n().plus()**1.5)*qflux.plus()
-        else:
-            return 0*qflux
+            return self._heat_face_factor(ref_species, geo)*qflux.plus() + fixed
+        return 0*qflux
 
     def Fp_minus(self, ref_species, geo, label=None):
         # Shift the complete interface throughput: adjacent control volumes
@@ -1395,13 +1449,17 @@ class Species():
         return self.Fp_plus(ref_species, geo, label=label).minus()
 
     def Fp_grid(self, ref_species, geo, label=None):
+        fixed = self._prescribed_face(1, label)
+        if label in self.prescribed_fluxes:
+            return fixed.toGridProfile()
         # returns GridProfile with fluxes evaluated at j
         if label is not None:
             qflux = self.qflux_labeled[label]
         else:
             qflux = self.qflux
         if self.evolve_temperature:
-            return 2./3.*(geo.area/geo.Btor**2*qflux).toGridProfile()*(ref_species.p()**2.5/ref_species.n()**1.5)
+            modeled = 2./3.*(geo.area/geo.Btor**2*qflux).toGridProfile()*(ref_species.p()**2.5/ref_species.n()**1.5)
+            return modeled + fixed.toGridProfile() if isinstance(fixed, FluxProfile) else modeled
         else:
             return 0*qflux.toGridProfile()
 
