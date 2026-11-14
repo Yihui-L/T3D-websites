@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="T3D-lyh · 物理源项与反馈：碰撞换热、辅助源、聚变 α 加热、辐射和运行反馈。">
+  <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/physics.html">
+  <title>物理源项与反馈 · T3D-lyh 源码手册</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="search.js"></script>
+  <script defer src="docs-ui.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+<div class="doc-mobile">
+  <button type="button" data-doc-toggle aria-controls="doc-sidebar" aria-expanded="false" hidden>☰ 目录</button>
+  <a href="home.html">T3D-lyh</a>
+</div>
+<aside class="doc-sidebar sidebar" id="doc-sidebar" aria-label="文档侧栏">
+  <div class="side-head">
+    <a href="home.html" class="side-brand"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"/></svg>T3D-lyh</a>
+    <p class="side-version">d5ac1fe · 源码与算例</p>
+    <form class="side-search" role="search" action="search.html" method="get">
+      <input type="search" name="q" placeholder="搜索文档" aria-label="搜索全部文档" required>
+    </form>
+  </div>
+  <nav class="side-toc" aria-label="分组导航"><p>文档</p><ul><li><a href="home.html">站点总览</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li><a href="parameters.html">完整输入参数</a></li></ul><p>手册章节</p><ul class="side-chapters"><li><a href="transport.html">输运方程与数值求解</a></li><li><a href="geometry.html">平衡与几何</a></li><li><a href="physics.html" aria-current="page">物理源项与反馈</a><ul class="side-sections"><li><a href="#overview">源与汇的物理模型</a></li><li><a href="#changes">相对上游的改动</a></li></ul></li><li><a href="closures.html">通量模型与并行调度</a></li><li><a href="io.html">输入、重启与诊断输出</a></li></ul><p>验证与源码</p><ul><li><a href="../W7X-ReLU-lyh/">W7-X ReLU 离子热输运</a></li><li><a href="SOURCE_VERSION.md">维护版版本记录</a></li><li><a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码快照</a></li><li><a href="https://t3d.readthedocs.io/en/latest/">上游 T3D 文档</a></li></ul></nav>
+</aside>
+<div class="doc-body" id="top">
+  <div class="doc-sheet">
+    <nav class="crumbs" aria-label="面包屑"><ol><li><a href="home.html">文档</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li aria-current="page">物理源项与反馈</li></ol><a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/physics.html">查看页面源文件</a></nav>
+    <nav class="page-turn top" aria-label="顶部前后页"><a href="geometry.html" rel="prev">← 上一页：平衡与几何</a><a href="closures.html" rel="next" class="doc-next">下一页：通量模型与并行调度 →</a></nav>
+    <main class="document" id="main">
+      <p class="doc-kind">源码手册 · 第 03 章</p>
+<section id="physics" class="manual-chapter" aria-labelledby="physics-title">
+  <h1 id="physics-title"><span class="chapter-number">03</span> 物理源项与反馈<a href="#physics" class="headerlink" aria-label="本章链接">¶</a></h1>
+  <div class="module-guide">
+<h2 id="overview">源与汇的物理模型<a href="#overview" class="headerlink" aria-label="本段链接">¶</a></h2>
+<p>离子升温、电子降温可以来自同一个成对换热项。温度按能量计：</p>
+<div class="formula" role="region" aria-label="碰撞能量交换" tabindex="0">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>S</mi><mrow><mi>E</mi><mo separator="true">,</mo><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">l</mi></mrow><mo separator="true">,</mo><mi>s</mi></mrow></msub><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><msub><mi>n</mi><mi>s</mi></msub><munder><mo>∑</mo><mi>u</mi></munder><msubsup><mi>ν</mi><mrow><mi>s</mi><mi>u</mi></mrow><mi>E</mi></msubsup><mo stretchy="false">(</mo><msub><mi>T</mi><mi>u</mi></msub><mo>−</mo><msub><mi>T</mi><mi>s</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">S_{E,\mathrm{coll},s}=\frac{3}{2}n_s\sum_u\nu^E_{su}(T_u-T_s)</annotation></semantics></math>
+</div>
+<p>物理组分全部演化时，成对交换总和应为零；固定某个温度时，它相当于规定热库，不应声称该简化系统独立闭合总热量。径向热流不是碰撞体热源。</p>
+<ul>
+<li>辅助粒子源与辅助能量源可规定高斯形状 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mi>exp</mi><mo>⁡</mo><mtext> ⁣</mtext><mo fence="true" stretchy="true" minsize="1.2em" maxsize="1.2em">[</mo><mo>−</mo><mo stretchy="false">(</mo><mi>ρ</mi><mo>−</mo><msub><mi>ρ</mi><mn>0</mn></msub><msup><mo stretchy="false">)</mo><mn>2</mn></msup><mi mathvariant="normal">/</mi><mo stretchy="false">(</mo><mn>2</mn><msup><mi>σ</mi><mn>2</mn></msup><mo stretchy="false">)</mo><mo fence="true" stretchy="true" minsize="1.2em" maxsize="1.2em">]</mo></mrow><annotation encoding="application/x-tex">A\exp\!\bigl[-(\rho-\rho_0)^2/(2\sigma^2)\bigr]</annotation></semantics></math>。若指定 <code>integrated</code>，用活动壳的 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mo>∑</mo><mi>j</mi></msub><mi mathvariant="normal">Δ</mi><msub><mi>V</mi><mi>j</mi></msub><msub><mi>S</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">\sum_j\Delta V_j S_j</annotation></semantics></math> 反求幅值；否则使用 <code>height</code>。也可导入离线沉积或使用 BEAMS3D 在线计算。</li>
+<li>D–T α 出生功率密度是 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>E</mi><mi>α</mi></msub><msub><mi>n</mi><mi mathvariant="normal">D</mi></msub><msub><mi>n</mi><mi mathvariant="normal">T</mi></msub><mo stretchy="false">⟨</mo><mi>σ</mi><mi>v</mi><mo stretchy="false">⟩</mo><mo stretchy="false">(</mo><msub><mi>T</mi><mrow><mi mathvariant="normal">r</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">l</mi></mrow></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">E_\alpha n_{\mathrm D} n_{\mathrm T}\langle\sigma v\rangle(T_{\mathrm{rel}})</annotation></semantics></math>，<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>E</mi><mi>α</mi></msub><mo>≈</mo><mn>3.5</mn><mtext> </mtext><mrow><mi mathvariant="normal">M</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">V</mi></mrow></mrow><annotation encoding="application/x-tex">E_\alpha\approx3.5\,\mathrm{MeV}</annotation></semantics></math>；两 Maxwellian 温度独立时，<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mrow><mi mathvariant="normal">r</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">l</mi></mrow></msub><mo>=</mo><mo stretchy="false">(</mo><msub><mi>m</mi><mi mathvariant="normal">T</mi></msub><msub><mi>T</mi><mi mathvariant="normal">D</mi></msub><mo>+</mo><msub><mi>m</mi><mi mathvariant="normal">D</mi></msub><msub><mi>T</mi><mi mathvariant="normal">T</mi></msub><mo stretchy="false">)</mo><mi mathvariant="normal">/</mi><mo stretchy="false">(</mo><msub><mi>m</mi><mi mathvariant="normal">D</mi></msub><mo>+</mo><msub><mi>m</mi><mi mathvariant="normal">T</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">T_{\mathrm{rel}}=(m_{\mathrm T}T_{\mathrm D}+m_{\mathrm D}T_{\mathrm T})/(m_{\mathrm D}+m_{\mathrm T})</annotation></semantics></math>。沉积功率等于出生功率乘 <code>alpha_efficiency</code>（且需开启热反馈），再按电子/离子份额分配；聚变总出生功率为 α 出生功率约 5.03 倍。该通道不等同于求解燃耗、灰积累或快粒子输运。</li>
+<li>杂质辐射是电子能量汇，按 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>n</mi><mi>e</mi></msub><msub><mo>∑</mo><mi>i</mi></msub><msub><mi>n</mi><mi>i</mi></msub><msub><mi>L</mi><mi>i</mi></msub><mo stretchy="false">(</mo><msub><mi>T</mi><mi>e</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">n_e\sum_i n_i L_i(T_e)</annotation></semantics></math> 组装；包含谱线、复合和轫致辐射的模型开启时，不重复加独立的轫致辐射 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>∝</mo><msub><mi>Z</mi><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">f</mi><mi mathvariant="normal">f</mi></mrow></msub><msubsup><mi>n</mi><mi>e</mi><mn>2</mn></msubsup><msqrt><msub><mi>T</mi><mi>e</mi></msub></msqrt></mrow><annotation encoding="application/x-tex">\propto Z_{\mathrm{eff}}n_e^2\sqrt{T_e}</annotation></semantics></math>。可另计通量后端提供的湍流组分间能量交换。</li>
+<li>可选功率或边界反馈在已接受步之间更新；Sudo 是经验密度控制，不是额外演化方程。辅助功率反馈也不读取时变文件。</li>
+</ul>
+<p><strong>I/O。</strong> <code>[physics]</code> 开关物理源，<code>[[species]].aux_particle_source / aux_power_source</code> 给规定源，<code>[[source]]</code> 选择外部沉积后端，<code>[time_dependence]</code> 控制反馈。正的热源表示向该组分加热，诊断以分项和总量分别输出；活动壳功率积分排除固定边界节点。完整<a href="parameters.html">源参数和配置</a>。</p>
+  </div>
+  <h2 id="changes" class="change-title">相对上游的改动<a href="#changes" class="headerlink" aria-label="本段链接">¶</a></h2>
+
+  <form class="toolbar" role="search" aria-label="搜索本章改动" hidden>
+    <label for="search">搜索本章改动</label>
+    <input id="search" type="search" placeholder="输入关键词" autocomplete="off" aria-controls="chapter-change-items">
+    <output id="search-status" for="search" role="status" aria-live="polite"></output>
+  </form>
+  <ul class="changes" id="chapter-change-items">
+    <li><strong>高斯源项归一化</strong> — 对活动壳做体积积分；显式给定总源（包括零）按活动域归一化，不把固定外节点当作沉积单元；对域外中心的截断尾部给出警告，不把几乎无重叠误当作正常输入。
+      <span class="ref"><a aria-label="高斯源项归一化：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="高斯源项归一化：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_vmec_source_balance.py">测试</a></span></li>
+    <li><strong>D–T 反应与 α 沉积</strong> — 区分 α 出生功率、沉积热和聚变增益。关闭 α 热反馈或降低保留率不改变出生功率；独立 D/T 用两个 Maxwell 分布的相对温度。纯 H/e 不产生 D–T 功率。
+      <span class="ref"><a aria-label="D–T 反应与 α 沉积：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Physics.py">源码</a> · <a aria-label="D–T 反应与 α 沉积：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_physical_recurrence.py">测试</a></span></li>
+    <li><strong>碰撞／辐射</strong> — 用碰撞成对能量交换校验输运方程与源项导数；辐射模型已含轫致辐射时避免重复计入；关闭源项时清除残留诊断。
+      <span class="ref"><a aria-label="碰撞／辐射：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Physics.py">源码</a> · <a aria-label="碰撞／辐射：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py">测试</a></span></li>
+    <li><strong>Zeff 与手动剖面</strong> — 修复高斯／手动 Zeff 输入和混合电荷背景的杂质稀释，保持准中性；手工 n、T 表兼容 NumPy 2.x 并检查输入。
+      <span class="ref"><a aria-label="Zeff 与手动剖面：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="Zeff 与手动剖面：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_physical_recurrence.py">测试</a></span></li>
+    <li><strong>辅助功率控制</strong> — Q 控制使用出生聚变功率，把外部沉积计入增益分母，但仅调节可控的规定辅助功率；没有可调热源时不虚构反馈。
+      <span class="ref"><a aria-label="辅助功率控制：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="辅助功率控制：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py">测试</a></span></li>
+    <li><strong>Sudo 与外侧边界</strong> — 在初始化及已接受步之间应用密度反馈，单次通量、源项和残差计算使用同一个剖面。边界控制保持固定量、关联温度和准中性；发生跳变后下一步从一阶重启。Sudo 是经验反馈，不是额外演化方程。
+      <span class="ref"><a aria-label="Sudo 与外侧边界：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/trinity_lib.py">源码</a> · <a aria-label="Sudo 与外侧边界：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py">测试</a></span></li>
+    <li><strong>PowerBalance</strong> — 独立的源平衡通量闭合在所有源项收集后计算，不能作为额外通量叠加到其他闭合。
+      <span class="ref"><a aria-label="PowerBalance：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/PowerBalance.py">源码</a> · <a aria-label="PowerBalance：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_geometry_balance_interfaces.py">测试</a></span></li>
+    <li><strong>BEAMS3D</strong> — 改用完整碰撞追踪；输入按 s、eV、m⁻³、kg 写入，输出用 √s 径向箱并汇总束线。修正 Fortran 起始下标、稀疏束线与同位素检查，分别控制粒子和能量源；可选独立 n,p 差分导数需要低标记噪声。目前离子沉积映射到主离子。
+      <span class="ref"><a aria-label="BEAMS3D：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/source_models/BEAMS3D.py">源码</a> · <a aria-label="BEAMS3D：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_beams3d_model.py">测试</a></span></li>
+    <li><strong>剖面依赖与中性根</strong> — 按依赖顺序处理 init_to / equal_to；若约束本身已使电荷恒为零，保留独立演化根；若单一密度根的比例与准中性冲突，给出明确错误。<span class="ref"> <a aria-label="剖面依赖与中性根：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py">源码</a> · <a aria-label="剖面依赖与中性根：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_physics_round4.py">测试</a></span></li>
+    <li><strong>初始化与源项防护</strong> — 自定义剖面组合平均值和边界值时保持固定边界；拒绝无物理意义的 Zeff 和非有限源项，清理外部源标签并校验 Q 控制范围。<span class="ref"> <a aria-label="初始化与源项防护：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Physics.py">源码</a> · <a aria-label="初始化与源项防护：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_physics_round4.py">测试</a></span></li>
+    <li><strong>BEAMS3D 一致性</strong> — 不把仅在 T3D 中重标度的几何默认为真实束注入几何；新调用清除上一份输出，无独立未知量时不构造空 Jacobian。<span class="ref"> <a aria-label="BEAMS3D 一致性：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/source_models/BEAMS3D.py">源码</a> · <a aria-label="BEAMS3D 一致性：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_beams3d_model.py">测试</a></span></li>
+  </ul>
+</section>
+    </main>
+    <nav class="page-turn bottom" aria-label="底部前后页"><a href="geometry.html" rel="prev">← 上一页：平衡与几何</a><a href="closures.html" rel="next" class="doc-next">下一页：通量模型与并行调度 →</a></nav>
+    <footer class="doc-footer">T3D-lyh · 源码 <code>d5ac1fe</code> · <a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="home.html">返回总览</a></footer>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="T3D-lyh · 通量模型与并行调度：ReLU、外部输运后端、规定通量文件、并行调度与缓存。">
+  <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/closures.html">
+  <title>通量模型与并行调度 · T3D-lyh 源码手册</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="search.js"></script>
+  <script defer src="docs-ui.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+<div class="doc-mobile">
+  <button type="button" data-doc-toggle aria-controls="doc-sidebar" aria-expanded="false" hidden>☰ 目录</button>
+  <a href="home.html">T3D-lyh</a>
+</div>
+<aside class="doc-sidebar sidebar" id="doc-sidebar" aria-label="文档侧栏">
+  <div class="side-head">
+    <a href="home.html" class="side-brand"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"/></svg>T3D-lyh</a>
+    <p class="side-version">d5ac1fe · 源码与算例</p>
+    <form class="side-search" role="search" action="search.html" method="get">
+      <input type="search" name="q" placeholder="搜索文档" aria-label="搜索全部文档" required>
+    </form>
+  </div>
+  <nav class="side-toc" aria-label="分组导航"><p>文档</p><ul><li><a href="home.html">站点总览</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li><a href="parameters.html">完整输入参数</a></li></ul><p>手册章节</p><ul class="side-chapters"><li><a href="transport.html">输运方程与数值求解</a></li><li><a href="geometry.html">平衡与几何</a></li><li><a href="physics.html">物理源项与反馈</a></li><li><a href="closures.html" aria-current="page">通量模型与并行调度</a><ul class="side-sections"><li><a href="#overview">通量闭合、单位与后端</a></li><li><a href="#changes">相对上游的改动</a></li></ul></li><li><a href="io.html">输入、重启与诊断输出</a></li></ul><p>验证与源码</p><ul><li><a href="../W7X-ReLU-lyh/">W7-X ReLU 离子热输运</a></li><li><a href="SOURCE_VERSION.md">维护版版本记录</a></li><li><a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码快照</a></li><li><a href="https://t3d.readthedocs.io/en/latest/">上游 T3D 文档</a></li></ul></nav>
+</aside>
+<div class="doc-body" id="top">
+  <div class="doc-sheet">
+    <nav class="crumbs" aria-label="面包屑"><ol><li><a href="home.html">文档</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li aria-current="page">通量模型与并行调度</li></ol><a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/closures.html">查看页面源文件</a></nav>
+    <nav class="page-turn top" aria-label="顶部前后页"><a href="physics.html" rel="prev">← 上一页：物理源项与反馈</a><a href="io.html" rel="next" class="doc-next">下一页：输入、重启与诊断输出 →</a></nav>
+    <main class="document" id="main">
+      <p class="doc-kind">源码手册 · 第 04 章</p>
+<section id="closures" class="manual-chapter" aria-labelledby="closures-title">
+  <h1 id="closures-title"><span class="chapter-number">04</span> 通量模型与并行调度<a href="#closures" class="headerlink" aria-label="本章链接">¶</a></h1>
+  <div class="module-guide">
+<h2 id="overview">通量闭合、单位与后端<a href="#overview" class="headerlink" aria-label="本段链接">¶</a></h2>
+<p>令各逆标长为：</p>
+<div class="formula" role="region" aria-label="粒子、压强和温度逆标长" tabindex="0">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>κ</mi><mi>n</mi></msub><mo>=</mo><mo>−</mo><msub><mi mathvariant="normal">∂</mi><mi>ρ</mi></msub><mi>ln</mi><mo>⁡</mo><mi>n</mi><mo separator="true">,</mo><mspace width="2em"/><msub><mi>κ</mi><mi>p</mi></msub><mo>=</mo><mo>−</mo><msub><mi mathvariant="normal">∂</mi><mi>ρ</mi></msub><mi>ln</mi><mo>⁡</mo><mi>p</mi><mo separator="true">,</mo><mspace width="2em"/><msub><mi>κ</mi><mi>T</mi></msub><mo>=</mo><msub><mi>κ</mi><mi>p</mi></msub><mo>−</mo><msub><mi>κ</mi><mi>n</mi></msub></mrow><annotation encoding="application/x-tex">\kappa_n=-\partial_\rho\ln n,\qquad \kappa_p=-\partial_\rho\ln p,\qquad \kappa_T=\kappa_p-\kappa_n</annotation></semantics></math>
+</div>
+<p>关闭噪声、暂不计经验背景项时，ReLU 模型输出的归一化热通量和粒子通量分别是：</p>
+<div class="formula" role="region" aria-label="ReLU 热支路及粒子支路" tabindex="0">
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mover accent="true"><mi>q</mi><mo stretchy="true">^</mo></mover><mo>=</mo><mi>m</mi><mi mathvariant="normal">sgn</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>κ</mi><mi>T</mi></msub><mo stretchy="false">)</mo><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mo stretchy="false">∣</mo><msub><mi>κ</mi><mi>T</mi></msub><mo stretchy="false">∣</mo><mo>−</mo><msub><mi>κ</mi><mi>c</mi></msub><mo separator="true">,</mo><mn>0</mn><msup><mo stretchy="false">)</mo><mi>b</mi></msup></mrow><annotation encoding="application/x-tex">\widehat q=m\operatorname{sgn}(\kappa_T)\max(\lvert\kappa_T\rvert-\kappa_c,0)^b</annotation></semantics></math>
+<math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mover accent="true"><mi mathvariant="normal">Γ</mi><mo stretchy="true">^</mo></mover><mo>=</mo><mi mathvariant="normal">sgn</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>κ</mi><mi>n</mi></msub><mo>−</mo><msub><mi>κ</mi><mi>c</mi></msub><mo stretchy="false">)</mo><mo stretchy="false">∣</mo><mi>m</mi><mo stretchy="false">(</mo><msub><mi>κ</mi><mi>n</mi></msub><mo>−</mo><msub><mi>κ</mi><mi>c</mi></msub><mo stretchy="false">)</mo><msup><mo stretchy="false">∣</mo><mi>b</mi></msup></mrow><annotation encoding="application/x-tex">\widehat\Gamma=\operatorname{sgn}(\kappa_n-\kappa_c)\lvert m(\kappa_n-\kappa_c)\rvert^b</annotation></semantics></math>
+</div>
+<p>各支路分别设定斜率和临界梯度，<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>κ</mi><mi>c</mi></msub></mrow><annotation encoding="application/x-tex">\kappa_c</annotation></semantics></math> 可随 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi></mrow><annotation encoding="application/x-tex">\rho</annotation></semantics></math> 线性变化。只有热支路有阈下关断；模型还可给粒子、热支路分别加上 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>D</mi><mrow><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">o</mi></mrow></msub><mi>n</mi><msub><mi>κ</mi><mi>n</mi></msub></mrow><annotation encoding="application/x-tex">D_{\mathrm{neo}}n\kappa_n</annotation></semantics></math> 和 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>D</mi><mrow><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">o</mi></mrow></msub><mi>p</mi><msub><mi>κ</mi><mi>p</mi></msub></mrow><annotation encoding="application/x-tex">D_{\mathrm{neo}}p\kappa_p</annotation></semantics></math>。这是归一化闭合，不是直接输入 SI 扩散系数，也不区分 ITG/TEM 等湍流模态。换成穿面粒子率和热功率时还需乘面几何及参考组分的局部 gyro-Bohm 因子。</p>
+<ul>
+<li><strong>内置计算：</strong> ReLU 是参数化闭合；Chang–Hinton 是解析新经典近似，需适用几何；RR 是仅补到电子热流的 <math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>κ</mi><mi>T</mi><mn>3</mn></msubsup></mrow><annotation encoding="application/x-tex">\kappa_T^3</annotation></semantics></math> 型模型；PowerBalance 由累计源反推平衡通量，独占使用，不是预测模型。</li>
+<li><strong>外部计算：</strong> GX 与 GS2-QL 提供湍流/准线性输运；SFINCS、KNOSOS 与 NEO 提供新经典输运。T3D 给出各面当前态及梯度，按后端需要提交扰动计算；后端的局部响应进入隐式迭代。模板和可执行程序不是外部通量表；并行与缓存只改变调度方式，不应改变方程。</li>
+<li><strong>文件给定：</strong> <code>model = &quot;Import&quot;</code> 读静态穿面 Γ（10²⁰ s⁻¹）或 Q（MW），用有符号线性插值到活动通量面，不外推；保持维度值，不给 Jacobian 增添虚假剖面导数。允许与非重复的在线分量相加，不应在回放总量后又叠加已含的模型。</li>
+</ul>
+<p><strong>I/O。</strong> <code>[[model]]</code> 可重复声明兼容的加性闭合，用唯一标签区分输出；特定后端依赖其输入模板、所需平衡和运行环境。末帧不同步的外部诊断不标为有效。计算能力与实跑验证是两件事；见<a href="parameters.html">模型与外部源完整参数</a>和<a href="#changes">逐项改动</a>。</p>
+  </div>
+  <h2 id="changes" class="change-title">相对上游的改动<a href="#changes" class="headerlink" aria-label="本段链接">¶</a></h2>
+
+  <form class="toolbar" role="search" aria-label="搜索本章改动" hidden>
+    <label for="search">搜索本章改动</label>
+    <input id="search" type="search" placeholder="输入关键词" autocomplete="off" aria-controls="chapter-change-items">
+    <output id="search-status" for="search" role="status" aria-live="polite"></output>
+  </form>
+  <ul class="changes" id="chapter-change-items">
+    <li><strong>ReLU</strong> — 修复反向梯度的有符号通量；开启噪声时，同一步的基值与扰动共享抽样，不依赖全局随机种子，避免噪声直接污染有限差分。
+      <span class="ref"><a aria-label="ReLU：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/ReLU.py">源码</a> · <a aria-label="ReLU：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numerics_round3.py">测试</a></span></li>
+    <li><strong>Rechester–Rosenbluth</strong> — 在输运面使用同位置的参考归一化，补齐固定压强梯度下的密度扰动响应，不改原三次依赖。
+      <span class="ref"><a aria-label="Rechester–Rosenbluth：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/RR.py">源码</a> · <a aria-label="Rechester–Rosenbluth：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numerics_round3.py">测试</a></span></li>
+    <li><strong>GX 闭合</strong> — ReLU 代理保留有符号的湍流能量交换 H 及梯度；先用完整物种集构造受约束梯度扰动，再筛选动力学组分。修复逐半径／角度的 GEQDSK 读取，并检查单样本与非有限输出。
+      <span class="ref"><a aria-label="GX 闭合：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/GX.py">源码</a> · <a aria-label="GX 闭合：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_backend_state_and_diagnostics.py">测试</a></span></li>
+    <li><strong>GS2-QL</strong> — 修复 GEQDSK 初始化和逐面读取；修正纯静电、零流剪切极限、单 k_y 取样以及有符号的组分权重。准线性模型见 Giacomin 等（2025）。
+      <span class="ref"><a aria-label="GS2-QL：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/GS2_QL.py">源码</a> · <a aria-label="GS2-QL：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_gs2_ql_geometry_and_metric.py">测试</a></span></li>
+    <li><strong>SFINCS</strong> — 平衡文件拷贝完成后才启动求解；控制 MPI 秩与线程预算，检查 HDF5 完成标志、非线性收敛、形状及有限值，不把半写或失败输出当作有效通量。
+      <span class="ref"><a aria-label="SFINCS：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/SFINCS.py">源码</a> · <a aria-label="SFINCS：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_backend_state_and_diagnostics.py">测试</a></span></li>
+    <li><strong>GS2／NEO／KNOSOS 作业</strong> — 用有界 CPU 调度和退出状态代替背景 shell 猜测；NEO 的输入解析器成功后才求解，KNOSOS 的径向输出必须齐全。
+      <span class="ref"><a aria-label="GS2／NEO／KNOSOS 作业：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/_external.py">源码</a> · <a aria-label="GS2／NEO／KNOSOS 作业：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_transport_jobs.py">测试</a></span></li>
+    <li><strong>GX GPU 与 MPI 调度</strong> — 本机按设备分组、每个任务按 GPU 数申请 MPI 秩；修正 Polaris 三卡分配，支持 Slurm／自定义启动器限流和可选的无进展报错。调度测试未用真实 GPU 或 Slurm。
+      <span class="ref"><a aria-label="GX GPU 与 MPI 调度：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/GX.py">源码</a> · <a aria-label="GX GPU 与 MPI 调度：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_transport_jobs.py">测试</a></span></li>
+    <li><strong>拒步、缓存与失败清理</strong> — 每次运行使用独立目录，步／迭代／拒步重试有独立标识；检查子进程退出和全部预期输出，终止仍在运行的兄弟作业。GX 仅把已成功并与同一几何匹配的检查点作热启动，不复用旧通量。
+      <span class="ref"><a aria-label="拒步、缓存与失败清理：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/trinity_lib.py">源码</a> · <a aria-label="拒步、缓存与失败清理：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_transport_jobs.py">测试</a></span></li>
+    <li><strong>GX 模板与 SFINCS 归一化</strong> — GX 以 TOML 解析含引号、缩进和标点的模板；SFINCS 保留物理电荷符号，并与输运面使用的参考速度和通量单位一致。<span class="ref"> <a aria-label="GX 模板与 SFINCS 归一化：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/SFINCS.py">源码</a> · <a aria-label="GX 模板与 SFINCS 归一化：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_flux_formats.py">测试</a></span></li>
+    <li><strong>NEO 与 KNOSOS 通量读回</strong> — NEO 核对物种、径向输出形状和归一化；KNOSOS 按预测输出约定读取主离子、电子及杂质通量，检查半径和列数。<span class="ref"> <a aria-label="NEO 与 KNOSOS 通量读回：源码" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/KNOSOS.py">源码</a> · <a aria-label="NEO 与 KNOSOS 通量读回：测试" href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_flux_formats.py">测试</a></span></li>
+    <li><strong>GX θ–ζ 图</strong> — 拒绝掩蔽或非有限样本；仅在已采样点的凸包内插值，不把未覆盖区域推断为微小非零通量。 <span class="ref"><a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/GX.py">源码</a> · <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_flux_formats.py">测试</a></span></li>
+  </ul>
+</section>
+    </main>
+    <nav class="page-turn bottom" aria-label="底部前后页"><a href="physics.html" rel="prev">← 上一页：物理源项与反馈</a><a href="io.html" rel="next" class="doc-next">下一页：输入、重启与诊断输出 →</a></nav>
+    <footer class="doc-footer">T3D-lyh · 源码 <code>d5ac1fe</code> · <a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="home.html">返回总览</a></footer>
+  </div>
+</div>
+</body>
+</html>
