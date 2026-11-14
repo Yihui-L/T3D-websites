@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="T3D-lyh · 搜索文档">
+  <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/search.html">
+  <title>搜索文档 · 文档</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="search-index.js"></script>
+  <script defer src="docs-ui.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+<div class="doc-mobile">
+  <button type="button" data-doc-toggle aria-controls="doc-sidebar" aria-expanded="false" hidden>☰ 目录</button>
+  <a href="home.html">T3D-lyh</a>
+</div>
+<aside class="doc-sidebar sidebar" id="doc-sidebar" aria-label="文档侧栏">
+  <div class="side-head">
+    <a href="home.html" class="side-brand"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"/></svg>T3D-lyh</a>
+    <p class="side-version">d5ac1fe · 源码与算例</p>
+    <form class="side-search" role="search" action="search.html" method="get">
+      <input type="search" name="q" placeholder="搜索文档" aria-label="搜索全部文档" required>
+    </form>
+  </div>
+  <nav class="side-toc" aria-label="分组导航"><p>文档</p><ul><li><a href="home.html">站点总览</a></li><li><a href="./">T3D-lyh 源码手册</a></li><li><a href="parameters.html">完整输入参数</a></li></ul><p>验证与源码</p><ul><li><a href="../W7X-ReLU-lyh/">W7-X ReLU 离子热输运</a></li><li><a href="SOURCE_VERSION.md">维护版版本记录</a></li><li><a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码快照</a></li><li><a href="https://t3d.readthedocs.io/en/latest/">上游 T3D 文档</a></li></ul></nav>
+</aside>
+<div class="doc-body" id="top">
+  <div class="doc-sheet">
+    <nav class="crumbs" aria-label="面包屑"><ol><li><a href="home.html">文档</a></li><li aria-current="page">搜索文档</li></ol></nav>
+
+    <main class="document" id="main">
+      <p class="doc-kind">站点导航</p>
+      <h1>搜索文档</h1>
+<p class="search-intro">搜索源码手册、完整参数表及 W7-X 回归算例。可用空格分隔多个关键词。</p>
+<form class="toolbar" id="doc-search" role="search">
+  <label for="doc-query">关键词</label>
+  <input type="search" id="doc-query" name="q" placeholder="例如 ReLU、heat_flux、功率残差">
+</form>
+<p id="doc-search-status" role="status" aria-live="polite"></p>
+<ul class="search-items" id="doc-search-items"></ul>
+<noscript><p>搜索需启用 JavaScript。仍可直接浏览<a href="./">源码手册</a>或<a href="parameters.html">参数表</a>。</p></noscript>
+    </main>
+
+    <footer class="doc-footer">T3D-lyh · 源码 <code>d5ac1fe</code> · <a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="home.html">返回总览</a></footer>
+  </div>
+</div>
+</body>
+</html>

@@ -3,41 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="T3D-lyh 源码手册：径向输运方程、源汇与通量模型、I/O 和完整输入参数、逐项改动。">
+  <meta name="description" content="T3D-lyh · T3D-lyh 源码手册">
   <link rel="canonical" href="https://yihui-l.github.io/T3D-websites/Source-Code/">
-  <title>T3D-lyh · 源码手册</title>
+  <title>T3D-lyh 源码手册 · 文档</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="search.js" defer></script>
+  <script defer src="search.js"></script>
+  <script defer src="docs-ui.js"></script>
 </head>
 <body>
 <a class="skip-link" href="#main">跳到正文</a>
-<header class="site-header">
-  <div class="topbar">
-    <a class="brand" href="#top">
-      <svg class="brand-mark" viewBox="0 0 40 40" width="36" height="36" aria-hidden="true" fill="none" stroke="currentColor">
-        <ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"></ellipse>
-        <ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"></ellipse>
-        <ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"></ellipse>
-      </svg>
-      <span>T3D-lyh</span>
-    </a>
-    <nav aria-label="站点导航">
-      <a href="home.html">站点总览</a>
-      <a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码</a>
-      <a href="parameters.html">输入参数</a>
-      <a href="../W7X-ReLU-lyh/">W7-X 算例</a>
-    </nav>
+<div class="doc-mobile">
+  <button type="button" data-doc-toggle aria-controls="doc-sidebar" aria-expanded="false" hidden>☰ 目录</button>
+  <a href="home.html">T3D-lyh</a>
+</div>
+<aside class="doc-sidebar sidebar" id="doc-sidebar" aria-label="文档侧栏">
+  <div class="side-head">
+    <a href="home.html" class="side-brand"><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><ellipse cx="20" cy="20" rx="16" ry="9" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="12" ry="6.5" transform="rotate(-30 20 20)"/><ellipse cx="20" cy="20" rx="7.9" ry="4" transform="rotate(-30 20 20)"/></svg>T3D-lyh</a>
+    <p class="side-version">d5ac1fe · 源码与算例</p>
+    <form class="side-search" role="search" action="search.html" method="get">
+      <input type="search" name="q" placeholder="搜索文档" aria-label="搜索全部文档" required>
+    </form>
   </div>
-</header>
-<div class="shell" id="top">
-  <aside class="sidebar">
-    <nav aria-label="本页目录">
-      <p>章节目录</p>
-      <ol><li><a href="#transport"><span>01</span> 输运方程与数值求解</a></li><li><a href="#geometry"><span>02</span> 平衡与几何</a></li><li><a href="#physics"><span>03</span> 物理源项与反馈</a></li><li><a href="#closures"><span>04</span> 通量模型与并行调度</a></li><li><a href="#io"><span>05</span> 输入、重启与诊断输出</a></li></ol>
-    </nav>
-  </aside>
-  <main class="content" id="main">
-    <div class="hero">
+  <nav class="side-toc" aria-label="分组导航"><p>文档</p><ul><li><a href="home.html">站点总览</a></li><li><a href="./" aria-current="page">T3D-lyh 源码手册</a></li><li><a href="parameters.html">完整输入参数</a></li></ul><p>本页目录</p><ul><li><a href="#transport">输运方程与数值求解</a></li><li><a href="#geometry">平衡与几何</a></li><li><a href="#physics">物理源项与反馈</a></li><li><a href="#closures">通量模型与并行调度</a></li><li><a href="#io">输入、重启与诊断输出</a></li></ul><p>验证与源码</p><ul><li><a href="../W7X-ReLU-lyh/">W7-X ReLU 离子热输运</a></li><li><a href="SOURCE_VERSION.md">维护版版本记录</a></li><li><a href="https://github.com/Yihui-L/T3D-websites/tree/main/Source-Code/T3D-lyh">GitHub 源码快照</a></li><li><a href="https://t3d.readthedocs.io/en/latest/">上游 T3D 文档</a></li></ul></nav>
+</aside>
+<div class="doc-body" id="top">
+  <div class="doc-sheet">
+    <nav class="crumbs" aria-label="面包屑"><ol><li><a href="home.html">文档</a></li><li aria-current="page">T3D-lyh 源码手册</li></ol><a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/README.md">查看页面源文件</a></nav>
+    <nav class="page-turn top" aria-label="顶部前后页"><a href="home.html" rel="prev">← 上一页：站点总览</a><a href="parameters.html" rel="next" class="doc-next">下一页：完整输入参数 →</a></nav>
+    <main class="document" id="main">
+      <p class="doc-kind">源码手册</p>
+      <div class="hero">
       <p class="kicker">TRINITY3D · 径向输运求解器</p>
       <h1>T3D-lyh 源码手册</h1>
       <p>T3D 用平衡几何、粒子与能量源项及径向通量闭合推进一维输运。五个模块分别说明物理方程、输入输出、实现边界和相对上游 v0.1.0 的改动。</p>
@@ -49,14 +44,15 @@
         <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/SOURCE_VERSION.md">版本记录</a>
       </div>
     </div>
-    <form class="toolbar" role="search">
+    <nav class="doc-toc" aria-label="页内导航"><p class="toc-label">本页目录</p><ul><li><a href="#transport">输运方程与数值求解</a></li><li><a href="#geometry">平衡与几何</a></li><li><a href="#physics">物理源项与反馈</a></li><li><a href="#closures">通量模型与并行调度</a></li><li><a href="#io">输入、重启与诊断输出</a></li></ul></nav>
+<form class="toolbar" role="search">
       <label for="search">搜索修改条目</label>
       <input id="search" type="search" placeholder="例如 BDF2、SFINCS、网格" autocomplete="off">
       <output id="search-status" for="search" role="status" aria-live="polite"></output>
     </form>
 
 <section id="transport" class="topic" aria-labelledby="transport-title">
-  <h2 id="transport-title"><span>01</span> 输运方程与数值求解</h2>
+  <h2 id="transport-title"><span>01</span> 输运方程与数值求解<a href="#transport" class="headerlink" aria-label="本段链接">¶</a></h2>
   <div class="module-guide">
 <h3>控制方程与离散</h3>
 <p>令 ρ 为径向磁通面标签，V(ρ) 为包围体积，V′=dV/dρ。组分 s 的未知量是粒子密度 nₛ 和热压 pₛ=nₛTₛ（T 按能量计）。用穿过整张磁面的向外粒子率 Γₛ 和热功率 Qₛ 写磁面平均方程：</p>
@@ -93,7 +89,7 @@
   </ul>
 </section>
 <section id="geometry" class="topic" aria-labelledby="geometry-title">
-  <h2 id="geometry-title"><span>02</span> 平衡与几何</h2>
+  <h2 id="geometry-title"><span>02</span> 平衡与几何<a href="#geometry" class="headerlink" aria-label="本段链接">¶</a></h2>
   <div class="module-guide">
 <h3>磁面坐标、几何与工作范围</h3>
 <p>仿星器采用 <code>torflux</code>，即 ρ=√s、s=Φₜ/Φₜ,LCFS；有 dV/dρ=2ρ·dV/ds。若 A 是磁面面积，几何关系为 A=V′⟨|∇ρ|⟩；只在得到正确磁面投影或面积平均后，才可把热流密度换成穿面功率。代码保存 A/a²、a⟨|∇ρ|⟩ 等无量纲度量，活动壳近似体积是 a³Δρ·(A/a²)/(a⟨|∇ρ|⟩)。<code>rho_edge</code> 是指定的剖面边界，不必是 LCFS。</p>
@@ -116,7 +112,7 @@
   </ul>
 </section>
 <section id="physics" class="topic" aria-labelledby="physics-title">
-  <h2 id="physics-title"><span>03</span> 物理源项与反馈</h2>
+  <h2 id="physics-title"><span>03</span> 物理源项与反馈<a href="#physics" class="headerlink" aria-label="本段链接">¶</a></h2>
   <div class="module-guide">
 <h3>源与汇的物理模型</h3>
 <p>离子升温、电子降温可以来自同一个成对换热项。以 T 为能量计， <code>Sᴱ,coll,ₛ = (3/2) nₛ Σᵤ νᴱₛᵤ (Tᵤ−Tₛ)</code>。物理组分全部演化时，成对交换总和应为零；固定某个温度时，它相当于规定热库，不应声称该简化系统独立闭合总热量。径向热流不是碰撞体热源。</p>
@@ -152,7 +148,7 @@
   </ul>
 </section>
 <section id="closures" class="topic" aria-labelledby="closures-title">
-  <h2 id="closures-title"><span>04</span> 通量模型与并行调度</h2>
+  <h2 id="closures-title"><span>04</span> 通量模型与并行调度<a href="#closures" class="headerlink" aria-label="本段链接">¶</a></h2>
   <div class="module-guide">
 <h3>通量闭合、单位与后端</h3>
 <p>定义 κₙ=−∂ρln n、κₚ=−∂ρln p，故 κₜ=κₚ−κₙ。ReLU 热支路（关闭噪声时）采用 <code>m·sgn(κₜ)·max(|κₜ|−κc,0)^b</code>，κc 可以随 ρ 线性变化；粒子支路使用 <code>sgn(κₙ−κc)·|m(κₙ−κc)|^b</code>，不是热支路的阈下关断。可另加 <code>D_neo nκₙ</code> 和 <code>D_neo pκₚ</code>。以上是归一化闭合，不是直接输入 SI 扩散系数，亦不区分 ITG/TEM 等湍流模态。换成穿面 Γ/Q 时还要乘面几何和参考组分的局域 gyro-Bohm 因子。</p>
@@ -187,7 +183,7 @@
   </ul>
 </section>
 <section id="io" class="topic" aria-labelledby="io-title">
-  <h2 id="io-title"><span>05</span> 输入、重启与诊断输出</h2>
+  <h2 id="io-title"><span>05</span> 输入、重启与诊断输出<a href="#io" class="headerlink" aria-label="本段链接">¶</a></h2>
   <div class="module-guide">
 <h3>输入 → 计算 → 输出</h3>
 <ol>
@@ -225,7 +221,10 @@
 <footer class="site-footer">
   T3D-lyh · 基于开源 T3D。<a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/README.md">编辑文档</a>
 </footer>
-  </main>
+    </main>
+    <nav class="page-turn bottom" aria-label="底部前后页"><a href="home.html" rel="prev">← 上一页：站点总览</a><a href="parameters.html" rel="next" class="doc-next">下一页：完整输入参数 →</a></nav>
+    <footer class="doc-footer">T3D-lyh · 源码 <code>d5ac1fe</code> · <a href="GPL-3.0.txt">GNU GPLv3</a> · <a href="home.html">返回总览</a></footer>
+  </div>
 </div>
 </body>
 </html>
