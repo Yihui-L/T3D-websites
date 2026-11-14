@@ -41,7 +41,6 @@ class SpeciesDict():
         self.T_evolve_keys = []
         self.n_equalto_keys = []
         self.T_equalto_keys = []
-        force_qn = False
 
         for idx, sp in enumerate(species_list_params):
             # initialize a species object
@@ -72,7 +71,11 @@ class SpeciesDict():
                 assert s.type != 'electron', "Error: electrons cannot be used as bulk ion species"
 
             # check for impurity species
+            if s.Zeff_target is not None and not s.impurity:
+                raise ValueError(f"Species {s.type!r} cannot specify a Zeff target with impurity=false")
             if s.impurity:
+                if s.type == "electron":
+                    raise ValueError("Electrons cannot be an initialization impurity")
                 impurity_count = impurity_count + 1
                 impurity_type = s.type
 
@@ -105,28 +108,34 @@ class SpeciesDict():
 
         if "electron" not in self.species_dict or last_ion_type is None:
             raise ValueError("Transport requires an electron species and at least one ion species")
+        if impurity_count > 1:
+            raise ValueError("Only one species may be marked as the initialization impurity")
         if len(explicit_qn) > 1:
             raise ValueError("Only one species may set qneut_species=true")
+        # Eliminate a root with nonzero effective charge. Linked species can
+        # already impose neutrality identically (e.g. n_H=n_e), in which
+        # case the independent density must not be removed.
+        roots = self._profile_link_roots("density")
+        charge, scale = self._root_charges(roots)
+        independent = {key for key in charge if self._nonzero_charge(charge[key], scale[key])}
         if explicit_qn:
             qneut_type = explicit_qn[0]
-        elif impurity_type is not None:
-            qneut_type = impurity_type
-        elif last_evolving_ion_type is not None:
-            qneut_type = last_evolving_ion_type
+            if self[qneut_type].density_equal_to is not None:
+                raise ValueError(f"The quasineutral species {qneut_type!r} cannot also set density.equal_to")
+            if qneut_type not in independent:
+                raise ValueError(f"The selected quasineutral species {qneut_type!r} has zero independent charge")
         else:
-            # An equal_to density is already constrained. Let a free ion (or
-            # the electron if all ions are linked) supply charge neutrality.
-            qneut_type = next((s.type for s in reversed(list(self.species_dict.values()))
-                               if s.type != "electron" and s.density_equal_to is None), "electron")
-        self.qneut_species = self.species_dict[qneut_type]
-        if self.qneut_species.density_equal_to is not None:
-            raise ValueError(f"The quasineutral species {qneut_type!r} cannot also set density.equal_to")
+            free_ions = [s.type for s in self.get_species_list()
+                         if s.type != "electron" and s.density_equal_to is None]
+            priority = [impurity_type, last_evolving_ion_type, *reversed(free_ions), "electron"]
+            qneut_type = next((k for k in priority if k in independent), None)
+        if qneut_type is not None and len(independent) == 1 and len(charge) == 1:
+            raise ValueError("Inconsistent charge in density links: linked ion charge does not sum to the electron density")
+        self.qneut_species = None if qneut_type is None else self[qneut_type]
 
-        # the qneut_type density profile can be set by quasineutrality,
-        # so don't include it in count of evolved profiles
-        if self.N_dens_profiles > 0 and self.qneut_species.evolve_density:  # last_evolving_ion_type is not None:
-            self.N_dens_profiles = self.N_dens_profiles - 1
-            self.species_dict[qneut_type].evolve_density = False
+        if self.qneut_species is not None and self.qneut_species.evolve_density:
+            self.N_dens_profiles -= 1
+            self.qneut_species.evolve_density = False
             self.n_evolve_keys.remove(qneut_type)
 
         # number of evolved profiles
@@ -136,10 +145,10 @@ class SpeciesDict():
         assert adiabatic_species_count <= 1, "Error: cannot have more than one adiabatic species specified in [species] section. Specify adiabatic species in [model] instead."
         assert reference_species_count <= 1, "Error: cannot have more than one species set as reference species"
         assert bulk_ion_count <= 1, "Error: cannot have more than one species set as bulk ions"
-        for t in self.n_equalto_keys:
-            assert self.species_dict[t].density_equal_to in self.species_dict.keys(), f"Error: cannot set '{t}' density equal to non-existent species '{self.species_dict[t].density_equal_to}'"
-        for t in self.T_equalto_keys:
-            assert self.species_dict[t].temperature_equal_to in self.species_dict.keys(), f"Error: cannot set '{t}' temperature equal to non-existent species '{self.species_dict[t].temperature_equal_to}'"
+        # Validate all initial dependencies before any profile import, even
+        # if quasineutrality will later override one initial density.
+        self._profile_link_roots("density", initial=True)
+        self._profile_link_roots("temperature", initial=True)
 
         # create member labeling adiabatic species
         if adiabatic_species_count == 1:
@@ -241,21 +250,20 @@ class SpeciesDict():
         for s in self.get_species_list():
             s.init_profiles(self.grid, geo, norms, imported)
 
-        # enforce equal_to densities and temperatures
-        self.enforce_equal_to_density(fixed_T=True, init=True)
-        self.enforce_equal_to_temperature(init=True)
-
-        # if impurity species and Zeff_target, enforce
-        if self.impurity is not None and self.impurity.Zeff_target is not None:
-            self.enforce_Zeff_target(fixed_T=True)
-
-        # Initialize the same linked/charge-dependent manifold used for every
-        # trial, then store the constrained reference values for frozen profiles.
+        # Density and temperature choices are independent. Snapshot the
+        # prescribed T before changing n and rebuild p only afterwards.
         temperatures = {s.type: s.T() for s in self.get_species_list()}
-        self._enforce_evolution_constraints()
+        if self.impurity is not None and self.impurity.Zeff_target is not None:
+            # Initialize the undiluted background; imposing quasineutrality
+            # with the pre-dilution impurity already present is incorrect.
+            self.enforce_equal_to_density(fixed_T=True, init=True)
+            self.enforce_Zeff_target(fixed_T=True)
+            self._enforce_evolution_constraints()
+        else:
+            self._enforce_evolution_constraints(initial=True)
         for s in self.get_species_list():
             s.p_prof = s.n()*temperatures[s.type]
-        self._enforce_evolution_temperatures()
+        self.enforce_equal_to_temperature(init=True)
         for s in self.get_species_list():
             s.n_init = GridProfile(s.n().profile.copy(), self.grid)
             s.T_init = GridProfile(s.T().profile.copy(), self.grid)
@@ -299,25 +307,10 @@ class SpeciesDict():
         return nt_vec
 
     def enforce_quasineutrality(self, fixed_T=False):
-        charge_density = np.zeros(self.N_radial)
-
-        # compute charge density without the quasineutral species
-        for s in self.get_species_list():
-            if s.type != self.qneut_species.type:
-                charge_density = charge_density + s.Z*s.n()
-
-        # use quasineutrality to set density of last evolved species.
-        # this needs to happen outside the above loop to ensure charge_density
-        # has been computed correctly.
-        # note that the charge_density does not include a contribution from the 'quasineutral' species,
-        # so that we can compute the following
-        if self.qneut_species:
-            T = self.qneut_species.T()
-            self.qneut_species.set_n(-charge_density/self.qneut_species.Z)
-
-            # keep temperature fixed
-            if fixed_T:
-                self.qneut_species.set_p(self.qneut_species.n()*T)
+        temperatures = {s.type: s.T() for s in self.get_species_list()} if fixed_T else {}
+        self._enforce_evolution_constraints()
+        for key, T in temperatures.items():
+            self[key].p_prof = self[key].n()*T
 
     def enforce_Zeff_target(self, fixed_T=False):
         """Initialize one impurity and dilute the original ions proportionally."""
@@ -349,98 +342,83 @@ class SpeciesDict():
         for s in others:
             s.set_n(s.n()*dilution, fixed_T=fixed_T)
 
-    def enforce_equal_to_density(self, fixed_T=False, init=False):
-        for s in self.get_species_list():
-            if s.density_equal_to is not None:
-                T = s.T()
-                n_eq = s.density_equal_to_frac * self[s.density_equal_to].n()
-                s.n_prof = n_eq
-                if fixed_T:
-                    s.p_prof = s.n_prof * T
+    def _profile_link_roots(self, field, initial=False, free=None):
+        """Express linked values as a constant factor times their root value."""
+        active, roots = set(), {}
 
-        if init:
-            for s in self.get_species_list():
-                if s.density_init_to is not None:
-                    T = s.T()
-                    n_eq = s.density_init_to_frac * self[s.density_init_to].n()
-                    s.n_prof = n_eq
-                    if fixed_T:
-                        s.p_prof = s.n_prof * T
+        def walk(name):
+            if name not in self.species_dict:
+                raise ValueError(f"Unknown species {name!r} in {field} profile link")
+            if name in active:
+                raise ValueError(f"Cycle in species {field} profile links")
+            if name not in roots:
+                active.add(name)
+                item = self[name]
+                link_type = "equal_to"
+                target = getattr(item, f"{field}_{link_type}")
+                if target is None and initial:
+                    link_type = "init_to"
+                    target = getattr(item, f"{field}_{link_type}")
+                if name == free or target is None:
+                    root, factor = name, 1.
+                else:
+                    root, factor = walk(target)
+                    factor *= getattr(item, f"{field}_{link_type}_frac")
+                    if not np.isfinite(factor) or factor <= 0:
+                        raise ValueError(f"Invalid combined {field} profile-link multiplier")
+                roots[name] = (root, factor)
+                active.remove(name)
+            return roots[name]
+
+        for name in self.species_dict:
+            walk(name)
+        return roots
+
+    def _root_charges(self, roots):
+        charge, scale = {}, {}
+        for name, (root, ratio) in roots.items():
+            current = self[name].Z*ratio
+            charge[root] = charge.get(root, 0.) + current
+            scale[root] = scale.get(root, 0.) + abs(current)
+        return charge, scale
+
+    @staticmethod
+    def _nonzero_charge(charge, charge_scale):
+        return abs(charge) > 8*np.finfo(float).eps*charge_scale
+
+    def enforce_equal_to_density(self, fixed_T=False, init=False):
+        roots = self._profile_link_roots("density", initial=init)
+        values = {key: self[key].n() for key in self.species_dict}
+        for key, (root, factor) in roots.items():
+            if key != root:
+                self[key].set_n(factor*values[root], fixed_T=fixed_T)
 
     def enforce_equal_to_temperature(self, init=False):
-        for s in self.get_species_list():
-            if s.temperature_equal_to is not None:
-                p = s.p()
-                T_eq = s.temperature_equal_to_frac * self[s.temperature_equal_to].T()
-                s.p_prof = T_eq * s.n()
-        if init:
-            for s in self.get_species_list():
-                if s.temperature_init_to is not None:
-                    p = s.p()
-                    T_eq = s.temperature_init_to_frac * self[s.temperature_init_to].T()
-                    s.p_prof = T_eq * s.n()
+        roots = self._profile_link_roots("temperature", initial=init)
+        values = {key: self[key].T() for key in self.species_dict}
+        for key, (root, factor) in roots.items():
+            if key != root:
+                self[key].set_T(factor*values[root])
 
-    def _enforce_evolution_constraints(self):
-        """Apply proportional profiles and quasineutrality at the same state.
-
-        Express every density as n_s = a_s*n_q + b_s, then solve the
-        charge constraint for n_q. This also handles proportional profiles
-        linked to the charge-dependent species or listed in reverse order.
-        """
-        q = self.qneut_species
-        density_terms = {q.type: (1.0, 0.0)}
-        active = set()
-
-        def density_terms_for(key):
-            if key not in density_terms:
-                if key in active:
-                    raise ValueError("Cycle in species density equal_to constraints")
-                active.add(key)
-                s = self[key]
-                if s.density_equal_to is None:
-                    terms = (0.0, s.n())
-                else:
-                    a, b = density_terms_for(s.density_equal_to)
-                    terms = (s.density_equal_to_frac*a, s.density_equal_to_frac*b)
-                density_terms[key] = terms
-                active.remove(key)
-            return density_terms[key]
-
-        charge_a = 0.0
-        charge_b = GridProfile(0.0, self.grid)
-        for s in self.get_species_list():
-            a, b = density_terms_for(s.type)
-            charge_a += s.Z*a
-            charge_b += s.Z*b
-        if charge_a == 0:
-            raise ValueError("Density equal_to constraints make the quasineutral density underdetermined")
-        n_q = -charge_b/charge_a
-        for s in self.get_species_list():
-            if s is q or s.density_equal_to is not None:
-                a, b = density_terms[s.type]
-                s.n_prof = a*n_q + b
+    def _enforce_evolution_constraints(self, initial=False):
+        qkey = self.qneut_species.type if self.qneut_species is not None else None
+        roots = self._profile_link_roots("density", initial=initial, free=qkey)
+        charge, scale = self._root_charges(roots)
+        values = {root: self[root].n() for root in charge}
+        if qkey is not None:
+            other = {key: z for key, z in charge.items() if key != qkey
+                     and self._nonzero_charge(z, scale[key])}
+            if self._nonzero_charge(charge[qkey],scale[qkey]):
+                total = sum((z*values[key] for key,z in other.items()), GridProfile(0., self.grid))
+                values[qkey] = -total/charge[qkey]
+            elif other:
+                raise ValueError("Initial density links cancel the selected quasineutral root but leave uncompensated charge")
+        for key, (root, factor) in roots.items():
+            if key != root or key == qkey:
+                self[key].n_prof = factor*values[root]
 
     def _enforce_evolution_temperatures(self):
-        active = set()
-        temperatures = {}
-
-        def temperature_for(key):
-            if key not in temperatures:
-                if key in active:
-                    raise ValueError("Cycle in species temperature equal_to constraints")
-                active.add(key)
-                s = self[key]
-                if s.temperature_equal_to is None:
-                    T = s.T()
-                else:
-                    T = s.temperature_equal_to_frac*temperature_for(s.temperature_equal_to)
-                    s.p_prof = T*s.n()
-                temperatures[key] = T
-                active.remove(key)
-            return temperatures[key]
-
-        for key in self.T_equalto_keys:
-            temperature_for(key)
+        self.enforce_equal_to_temperature()
 
     def get_profs_from_vec(self, nt_vec):
         """Unpack independent n and p values; keep the boundary node fixed."""
@@ -518,20 +496,37 @@ class SpeciesDict():
                 df /= T_ref
         return ns, Ts, df[pert_idx]
 
+    def get_densities_on_flux_grid(self):
+        """Interpolate all species with the same stencil on each face.
+
+        Applying the positivity fallback to individual species breaks the
+        linear charge and density-link constraints. If any face density is
+        nonpositive, use the same neighboring-node mean for every species
+        there, retaining those constraints and second-order accuracy.
+        """
+        densities = [s.n() for s in self.get_species_list()]
+        face = np.stack([n.toFluxProfile(positive=False).profile for n in densities])
+        fallback = np.any((face <= 0.) | ~np.isfinite(face), axis=0)
+        if np.any(fallback):
+            for row, n in zip(face, densities):
+                row[fallback] = (0.5*n.profile[:-1] + 0.5*n.profile[1:])[fallback]
+        return face
+
     def get_profiles_on_flux_grid(self, normalize=False, a_minor=1.0):
 
-        ns = np.zeros((self.N_species, self.N_radial-1))
+        ns = self.get_densities_on_flux_grid()
         Ts = np.zeros((self.N_species, self.N_radial-1))
         nus = np.zeros((self.N_species, self.N_radial-1))
 
         if normalize:
             # reference values for flux tube calculation
-            n_ref = self.ref_species.n().toFluxProfile()  # 10^20 m^-3
+            ref_ind = next(i for i, item in enumerate(self.get_species_list()) if item is self.ref_species)
+            n_ref = ns[ref_ind].copy()  # 10^20 m^-3
             T_ref = self.ref_species.T().toFluxProfile()  # keV
             vt_ref = self.ref_species.norms.vT_ref*T_ref**0.5  # m/s
 
         for i, s in enumerate(self.get_species_list()):
-            n = s.n().toFluxProfile()
+            n = ns[i]
             T = s.T().toFluxProfile()
             nu_ss = s.collision_frequency(s).toFluxProfile()
 
@@ -547,62 +542,96 @@ class SpeciesDict():
         return ns, Ts, nus
 
     def get_grads_on_flux_grid(self, pert_n=None, pert_T=None, abs_step=None):
-        """Return local gradient probes along the independent n and p directions."""
-        all_species = self.get_species_list()
-        shape = (self.N_species, self.N_radial-1)
-        kns = np.zeros(shape)
-        kts = np.zeros(shape)
-        kps = np.zeros(shape)
-        dkap = np.zeros(shape[1])
-        rows = {}
+        """Return face gradients and the probe along one independent direction."""
+        all_species = list(self.get_species_list())
+        face_n = self.get_densities_on_flux_grid()
+        shape = face_n.shape
+        kns, kts, kps = (np.zeros(shape) for _ in range(3))
+        rows = {s.type: i for i, s in enumerate(all_species)}
         for i, s in enumerate(all_species):
-            rows[s.type] = i
             kn, kt, kp = s.get_fluxgrads()
             kns[i] = kn.profile if hasattr(kn, "profile") else kn
             kts[i] = kt.profile if hasattr(kt, "profile") else kt
             kps[i] = kp.profile if hasattr(kp, "profile") else kp
-        if pert_n is None and pert_T is None:
-            return kns, kts, kps, dkap
+
         if pert_n is not None and pert_T is not None:
             raise ValueError("A flux probe must perturb either density or pressure, not both")
-
         key = pert_n if pert_n is not None else pert_T
+        q = self.qneut_species
+        terms = {} if q is None else {q.type: (1.0, 0.0)}
+
+        def coefficients(name):
+            if name not in terms:
+                item = self[name]
+                link = getattr(item, "density_equal_to", None)
+                if link is None:
+                    terms[name] = (0.0, float(name == pert_n))
+                else:
+                    a, b = coefficients(link)
+                    terms[name] = (item.density_equal_to_frac*a, item.density_equal_to_frac*b)
+            return terms[name]
+
+        def density_root(item):
+            link = getattr(item, "density_equal_to", None)
+            return item if link is None else density_root(self[link])
+
+        # I[-n'/n] is not -I[n']/I[n] for varying species fractions. As in
+        # the perturbations, enforce charge balance of physical dn/drho at
+        # each face while keeping the independent log-gradients unchanged.
+        for item in all_species:
+            if getattr(item, "density_equal_to", None) is not None:
+                kns[rows[item.type]] = kns[rows[density_root(item).type]]
+        if q is not None:
+            a = sum(item.Z*coefficients(item.type)[0] for item in all_species)
+            if a == 0. or not np.isfinite(a):
+                raise ValueError("Density constraints do not determine the quasineutral gradient")
+            charged = sum((item.Z*face_n[i]*kns[i] for i, item in enumerate(all_species)
+                           if coefficients(item.type)[0] == 0.), np.zeros(shape[1]))
+            q_kn = -charged/(a*face_n[rows[q.type]])
+            for i, item in enumerate(all_species):
+                if coefficients(item.type)[0] != 0.:
+                    kns[i] = q_kn
+
+        done = set()
+        def set_temperature_gradient(item):
+            if item.type not in done:
+                i = rows[item.type]
+                link = getattr(item, "temperature_equal_to", None)
+                if link is not None:
+                    set_temperature_gradient(self[link])
+                    kts[i] = kts[rows[link]]
+                elif item.evolve_temperature:
+                    kts[i] = kps[i]-kns[i]
+                else:
+                    kts[i] = item.T().log_gradient().toFluxProfile(positive=False).profile * -1.
+                kps[i] = kns[i]+kts[i]
+                done.add(item.type)
+
+        for item in all_species:
+            set_temperature_gradient(item)
+        if key is None:
+            return kns, kts, kps, np.zeros(shape[1])
+
         probed = self[key]
         base = kns[rows[key]] if pert_n is not None else kts[rows[key]]
         dkap = np.maximum(probed.rel_step*np.abs(base), probed.abs_step if abs_step is None else abs_step)
-        if not np.all(np.isfinite(dkap) & (dkap > 0) & (base+dkap != base)):
+        signed = -dkap if pert_n is not None else dkap
+        if not np.all(np.isfinite(dkap) & (dkap > 0.) & np.isfinite(base+signed) & (base+signed != base)):
             raise ValueError(f"The {key!r} gradient probe must be finite and nonzero; use abs_step > 0")
+        dkap = signed
+
         dkn = np.zeros(shape)
         if pert_n is not None:
-            dkap *= -1
-            # The same linear density constraints also hold for dn/drho.
-            # Convert the perturbation of dln(n)/drho into dn/drho, solve
-            # the linear constraints, then convert each species back.
-            q = self.qneut_species
-            terms = {} if q is None else {q.type: (1.0, 0.0)}
-
-            def coefficients(name):
-                if name not in terms:
-                    item = self[name]
-                    link = getattr(item, "density_equal_to", None)
-                    if link is None:
-                        terms[name] = (0.0, float(name == key))
-                    else:
-                        a, b = coefficients(link)
-                        terms[name] = (item.density_equal_to_frac*a, item.density_equal_to_frac*b)
-                return terms[name]
-
-            q_response = 0.0
-            if q is not None:
-                a = sum(item.Z*coefficients(item.type)[0] for item in all_species)
-                b = sum(item.Z*coefficients(item.type)[1] for item in all_species)
-                q_response = -b/a
-            nk = probed.n().toFluxProfile().profile
-            for item in all_species:
-                a, b = coefficients(item.type)
-                response = a*q_response + b
-                if response != 0:
-                    dkn[rows[item.type]] = response*nk/item.n().toFluxProfile().profile*dkap
+            # Convert the independent logarithmic probe into dn/drho,
+            # propagate the same linear constraints, then convert back.
+            q_response = 0. if q is None else -sum(
+                item.Z*coefficients(item.type)[1] for item in all_species)/a
+            nk = face_n[rows[key]]
+            for i, item in enumerate(all_species):
+                a_item, b_item = coefficients(item.type)
+                response = a_item*q_response+b_item
+                if response != 0.:
+                    dkn[i] = response*nk/face_n[i]*dkap
 
         dkt = {}
         def temperature_response(item):
@@ -612,18 +641,17 @@ class SpeciesDict():
                     dkt[item.type] = temperature_response(self[link])
                 elif item.type == pert_T:
                     dkt[item.type] = dkap
-                elif getattr(item, "evolve_temperature", True):
+                elif item.evolve_temperature:
                     dkt[item.type] = -dkn[rows[item.type]]
                 else:
                     dkt[item.type] = np.zeros_like(dkap)
             return dkt[item.type]
 
-        for item in all_species:
-            i = rows[item.type]
+        for i, item in enumerate(all_species):
             dt = temperature_response(item)
             kns[i] += dkn[i]
             kts[i] += dt
-            kps[i] += dkn[i] + dt
+            kps[i] += dkn[i]+dt
         return kns, kts, kps, dkap
 
     def get_pressure_SI(self):
@@ -743,6 +771,12 @@ class SpeciesDict():
         for s in self.get_species_list():
             s.Sn = GridProfile(0, self.grid)
             s.Sp = GridProfile(0, self.grid)
+            # External contributions belong to the last successful trial;
+            # invalidate labels too, so failed/disabled sources cannot leak
+            # into the total auxiliary/fusion gain after the next evaluation.
+            s.Sn_labeled = {'aux': s.Sn_labeled['aux']}
+            s.Sp_labeled = {key: value for key, value in s.Sp_labeled.items()
+                            if key in {'aux', 'alpha', 'rad', 'heating', 'coll'}}
             for t in self.get_species_list():
                 s.dSn_dn[t.type] = GridProfile(0, self.grid)
                 s.dSn_dT[t.type] = GridProfile(0, self.grid)
@@ -750,13 +784,17 @@ class SpeciesDict():
                 s.dSp_dT[t.type] = GridProfile(0, self.grid)
 
     def add_source(self, Sn_sj, Sp_sj, label=None):
+        expected = (self.N_species, self.N_radial)
+        Sn, Sp = (np.asarray(src, dtype=float) for src in (Sn_sj, Sp_sj))
+        if any(src.shape != expected or not np.all(np.isfinite(src)) for src in (Sn, Sp)):
+            raise ValueError(f"External sources require finite particle and power arrays of shape {expected}")
         for i, s in enumerate(self.get_species_list()):
-            s.Sn += GridProfile(Sn_sj[i, :], self.grid)
-            s.Sp += GridProfile(Sp_sj[i, :], self.grid)
-
+            sn, sp = GridProfile(Sn[i], self.grid), GridProfile(Sp[i], self.grid)
+            s.Sn += sn
+            s.Sp += sp
             if label is not None:
-                s.Sn_labeled[label] = GridProfile(Sn_sj[i, :], self.grid)
-                s.Sp_labeled[label] = GridProfile(Sp_sj[i, :], self.grid)
+                s.Sn_labeled[label] = s.Sn_labeled.get(label, 0.) + sn
+                s.Sp_labeled[label] = s.Sp_labeled.get(label, 0.) + sp
 
     def add_dS_dn(self, stype, dSn_dn_sj, dSp_dn_sj):
         for i, s in enumerate(self.get_species_list()):
@@ -879,48 +917,35 @@ class Species():
         # equal_to = "0.5 * electron"
         # the following function parses the string to handle both cases
 
-        # thank you ChatGPT for helping write this function...
-        def parse_string(input_str):
-            # Define a regular expression pattern to match the numeric value and the unit
-            pattern = r'(\d+(\.\d+)?([eE][+-]?\d+)?)\s*\*\s*(\w+)'
-
-            # Use re.match to search for the pattern in the input string
-            match = re.match(pattern, input_str)
-            match2 = re.match(r'\w+', input_str)  # handle case with no multiplier
-
-            if match:
-                # Extract the numeric value and unit from the matched groups
-                value = float(match.group(1))
-                unit = match.group(4)
-
-                return [value, unit]
-            elif match2:
-                value = 1.0
-                unit = match2.group(0)
-                return [value, unit]
-            else:
-                assert False, f"Error parsing string \"{input_str}\""
-
-        # the init_to parameter can be used to initialize a profile
-        # as some fraction of another profile. after initialization
-        # the profiles will evolve independently
-        if self.density_init_to is not None:
-            (self.density_init_to_frac, self.density_init_to) = parse_string(self.density_init_to)
-        if self.temperature_init_to is not None:
-            (self.temperature_init_to_frac, self.temperature_init_to) = parse_string(self.temperature_init_to)
-
-        # the equal_to parameter can be used to maintain a profile
-        # as some fraction of another profile, even as the system evolves
-        if self.density_equal_to is not None:
-            (self.density_equal_to_frac, self.density_equal_to) = parse_string(self.density_equal_to)
-        if self.temperature_equal_to is not None:
-            (self.temperature_equal_to_frac, self.temperature_equal_to) = parse_string(self.temperature_equal_to)
+        for field in ("density", "temperature"):
+            equal = getattr(self, f"{field}_equal_to")
+            init = getattr(self, f"{field}_init_to")
+            if equal is not None and init is not None:
+                raise ValueError(f"{field}.init_to and equal_to cannot both be specified for {self.type!r}")
+            for mode, value in (("equal_to", equal), ("init_to", init)):
+                if value is None:
+                    continue
+                match = re.fullmatch(
+                    r"\s*(?:(\d+(?:\.\d*)?|\.\d+)([eE][+-]?\d+)?\s*\*\s*)?(\w+)\s*",
+                    str(value))
+                if match is None or not isinstance(value,str):
+                    raise ValueError(f"Invalid {field}.{mode} expression for {self.type!r}: {value!r}")
+                coefficient, exponent, species = match.groups()
+                ratio = float(coefficient + (exponent or "")) if coefficient else 1.
+                if not np.isfinite(ratio) or ratio <= 0.:
+                    raise ValueError(f"{field}.{mode} requires a finite positive multiplier")
+                setattr(self, f"{field}_{mode}", species)
+                setattr(self, f"{field}_{mode}_frac", ratio)
 
         self.type_tag = sp.get('tag') or self.get_type_tag()  # for diagnostic output
 
         # physical parameters
-        self.mass = sp.get('mass') or self.get_mass()  # mass in units of proton mass
-        self.Z = sp.get('Z') or self.get_charge()      # charge in units of e
+        self.mass = self.get_mass() if sp.get('mass') is None else sp['mass']  # m_p
+        self.Z = self.get_charge() if sp.get('Z') is None else sp['Z']  # e
+        if isinstance(self.mass, bool) or not np.isfinite(self.mass) or self.mass <= 0:
+            raise ValueError(f"Species {self.type!r} requires a finite positive mass")
+        if isinstance(self.Z, bool) or not np.isfinite(self.Z) or (self.Z != -1 if self.type == "electron" else self.Z <= 0):
+            raise ValueError(f"Species {self.type!r} requires electron Z=-1 or finite positive ion charge")
 
         # initial profiles
         # density parameters in units of 10^20 m^-3
@@ -939,7 +964,7 @@ class Species():
         self.n_width = density_parameters.get('width', 0.1)
         self.n_center = density_parameters.get('center', 0)
         # EXPONENTIAL
-        self.n_coefs = density_parameters.get('coefs', [0,0,0,0])
+        self.n_coefs = list(density_parameters.get('coefs', [0,0,0,0]))
         if len(self.n_coefs) < 4:  # pad with zeros
             self.n_coefs.extend([0] * (4 - len(self.n_coefs)))
         # IMPORT
@@ -979,7 +1004,7 @@ class Species():
         self.T_width = temperature_parameters.get('width', 0.1)
         self.T_center = temperature_parameters.get('center', 0)
         # EXPONENTIAL
-        self.T_coefs = temperature_parameters.get('coefs', [0,0,0,0])
+        self.T_coefs = list(temperature_parameters.get('coefs', [0,0,0,0]))
         if len(self.T_coefs) < 4:  # pad with zeros
             self.T_coefs.extend([0] * (4 - len(self.T_coefs)))
         # IMPORT
@@ -1099,6 +1124,23 @@ class Species():
             raise ValueError(f'{label} manual profile requires positive values on a sorted finite radius covering the grid')
         return GridProfile(PchipInterpolator(x, val, extrapolate=False)(rho), grid)
 
+    @staticmethod
+    def _scale_custom_profile(profile, edge, lineavg, volavg, geo, label):
+        average = np.mean if lineavg is not None else geo.volume_average if volavg is not None else None
+        target = lineavg if lineavg is not None else volavg
+        if target is None:
+            return profile if edge is None else profile - profile[-1] + edge
+        if edge is None:
+            origin, shape = 0., profile
+        else:
+            origin, shape = edge, profile - profile[-1]
+        if target == origin:
+            return GridProfile(origin, profile.grid)
+        norm = average(shape)
+        if not np.isfinite(norm) or norm == 0:
+            raise ValueError(f"Cannot scale a custom {label} profile to the requested average and edge")
+        return ((target-origin)/norm)*shape+origin
+
     def init_profiles(self, grid, geo, norms, imported=None):
         # import initial density from file
         if self.n_import:
@@ -1145,14 +1187,8 @@ class Species():
             self.n_prof = GridProfile(self.n_init_func(grid.rho), grid)
             del self.n_init_func  # this is necessary to allow Species class to be pickled
 
-            # scale line-average or volume-average
-            # note: n_edge (if present) will not be scaled
-            if self.n_edge is None:
-                self.n_edge = 0.0  # default value
-            if self.n_lineavg:
-                self.n_prof = (self.n_lineavg - self.n_edge) / np.average(self.n_prof) * self.n_prof + self.n_edge
-            elif self.n_volavg:
-                self.n_prof = (self.n_volavg - self.n_edge) / geo.volume_average(self.n_prof) * self.n_prof + self.n_edge
+            self.n_prof = self._scale_custom_profile(
+                self.n_prof, self.n_edge, self.n_lineavg, self.n_volavg, geo, "density")
         else:
             raise ValueError('Invalid n profile shape in Trinity input')
 
@@ -1201,14 +1237,8 @@ class Species():
             T_prof = GridProfile(self.T_init_func(grid.rho), grid)
             del self.T_init_func  # this is necessary to allow Species class to be pickled
 
-            # scale line-average or volume-average
-            # note: T_edge (if present) will not be scaled
-            if self.T_edge is None:
-                self.T_edge = 0.0  # default value.
-            if self.T_lineavg:
-                T_prof = (self.T_lineavg - self.T_edge) / np.average(T_prof) * T_prof + self.T_edge
-            elif self.T_volavg:
-                T_prof = (self.T_volavg - self.T_edge) / geo.volume_average(T_prof) * T_prof + self.T_edge
+            T_prof = self._scale_custom_profile(
+                T_prof, self.T_edge, self.T_lineavg, self.T_volavg, geo, "temperature")
         else:
             raise ValueError('Invalid T profile shape in Trinity input')
 
@@ -1316,7 +1346,7 @@ class Species():
         kap_p_grid = -1*self.p_prof.log_gradient()
         kap_T_grid = kap_p_grid - kap_n_grid
 
-        return kap_n_grid.toFluxProfile(), kap_T_grid.toFluxProfile(), kap_p_grid.toFluxProfile()
+        return tuple(k.toFluxProfile(positive=False) for k in (kap_n_grid, kap_T_grid, kap_p_grid))
 
     # flux vector F_n (normalized particle flux)
     def Fn_plus(self, ref_species, geo, label=None):

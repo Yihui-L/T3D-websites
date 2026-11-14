@@ -4,7 +4,6 @@
 from t3d import Profiles as pf
 import numpy as np
 from scipy.interpolate import interp1d
-from scipy import integrate
 from t3d.geometry_models.VMEC import VmecReader
 from t3d.geometry_models.DESC import DescHandler
 from t3d.Logbook import info, errr
@@ -44,10 +43,15 @@ class Geometry():
         if canonical is not None and legacy is not None and canonical != legacy:
             raise ValueError("Conflicting evolve_equilibrium and update_equilibrium flags")
         self.evolve_equilibrium = canonical if canonical is not None else bool(legacy)
-        if self.evolve_equilibrium and (self.geo_option != "desc" or grid.flux_label != "torflux"):
-            raise ValueError("Equilibrium updates require DESC with rho = sqrt(normalized toroidal flux)")
+        if self.evolve_equilibrium and self.geo_option != "desc":
+            raise ValueError("Equilibrium updates require DESC")
+        if self.geo_option == 'desc' and grid.flux_label != 'torflux':
+            raise ValueError("DESC requires rho = sqrt(normalized toroidal flux)")
         self.desc_pressure_threshold = geo_parameters.get('desc_pressure_delta_threshold', 1.25)  # determines whether to update desc
         self.desc_pressure_perturb = geo_parameters.get('desc_pressure_delta', 2)  # determines whether to perturb or full solve
+        if self.evolve_equilibrium and not all(np.isfinite(x) and x >= 1 for x in
+                                               (self.desc_pressure_threshold, self.desc_pressure_perturb)):
+            raise ValueError("DESC symmetric pressure-ratio thresholds must be finite and at least one")
         self.desc_use_vmec_format = geo_parameters.get('desc_use_vmec_format', None)
         self.desc_device = geo_parameters.get('desc_device', 'auto')
 
@@ -434,7 +438,10 @@ class Geometry():
             grho = self.grho.profile
             area = self.area.profile
         else:
-            assert False, 'Geometry.volavg(f) requires f to be a GridProfile or FluxProfile'
+            assert False, 'Geometry.volume_integrate requires GridProfile or FluxProfile'
+
+        if not f._same_grid(self.area_grid if isinstance(f,pf.GridProfile) else self.area):
+            raise ValueError("Volume integral profile and equilibrium use different radial grids")
 
         if active:
             if interpolate or not isinstance(f, pf.GridProfile):
@@ -445,21 +452,21 @@ class Geometry():
                 integral = f.__class__(np.r_[cumulative, cumulative[-1]], self.grid)
             else:
                 integral = np.sum(integrand)*self.grid.drho
-        elif profile:
-            if interpolate:
-                integrand = interp1d(f.axis, f.profile*area/grho, fill_value='extrapolate')
-                integral = 0*f.profile
-                for i in np.arange(len(f.profile)):
-                    integral[i] = integrate.quad(integrand, 0, f.axis[i], limit=100, epsabs=1e-5)[0]
-                integral = f.__class__(integral, self.grid)
-            else:
-                integral = f.__class__(np.cumsum(f.profile*area/grho)*self.grid.drho, self.grid)
         else:
+            values = f.profile*area/grho
             if interpolate:
-                integrand = interp1d(f.axis, f.profile*area/grho, fill_value='extrapolate')
-                integral = integrate.quad(integrand, 0, f.axis[-1], limit=100, epsabs=1e-5)[0]
+                # Integrate the piecewise-linear volume integrand exactly,
+                # from the axis to each sampled rho (or the final sample).
+                rho = f.rho
+                if rho[0] > 0:
+                    axis = values[0] - rho[0]*(values[1]-values[0])/(rho[1]-rho[0])
+                    first = 0.5*rho[0]*(axis+values[0])
+                else:
+                    first = 0.
+                cumulative = np.r_[first, first+np.cumsum(.5*np.diff(rho)*(values[:-1]+values[1:]))]
             else:
-                integral = np.sum(f.profile*area/grho)*self.grid.drho
+                cumulative = np.cumsum(values)*self.grid.drho
+            integral = f.__class__(cumulative,self.grid) if profile else cumulative[-1]
 
         if normalized:
             fac = 1  # returns volume integral normalized to a^3
@@ -508,7 +515,7 @@ class Geometry():
         self.Ba_vmec = vmec.Ba_vmec
         self.iota_vmec = vmec.iotaf
         self.volavgB_vmec = vmec.volavgB
-        self.B0_vmec = vmec.B0
+        self.B0_vmec = abs(float(vmec.B0))
         self.volume_vmec = vmec.volume
 
         # Map area and dV/drho separately onto the radial cell/face grids;
@@ -560,15 +567,16 @@ class Geometry():
         self.B0_desc = float(desc.B0)
         self.iota23 = float(desc.iota23)
 
-        # interpolate grho and area onto Trinity grids
-        interp = interp1d(desc.rho[1:], desc.grad_rho[1:], fill_value='extrapolate')
-        self.grho = pf.FluxProfile(interp(self.grid.midpoints), self.grid)
-        self.grho_grid = pf.GridProfile(interp(self.grid.rho), self.grid)
-
-        # area = dVdrho * <|grad rho|>
-        interp = interp1d(desc.rho, desc.area, fill_value='extrapolate')
-        self.area = pf.FluxProfile(interp(self.grid.midpoints), self.grid)
-        self.area_grid = pf.GridProfile(interp(self.grid.rho), self.grid)
+        # Use the native DESC dV/dρ, rather than a ratio of separately
+        # interpolated area and gradient (which distorts cell volumes).
+        interp_area = interp1d(desc.rho, desc.area, fill_value='extrapolate')
+        interp_volume = interp1d(desc.rho, desc.dVdrho, fill_value='extrapolate')
+        self.area = pf.FluxProfile(interp_area(self.grid.midpoints), self.grid)
+        self.area_grid = pf.GridProfile(interp_area(self.grid.rho), self.grid)
+        self.dVdrho = pf.FluxProfile(interp_volume(self.grid.midpoints), self.grid)
+        self.dVdrho_grid = pf.GridProfile(interp_volume(self.grid.rho), self.grid)
+        self.grho = self.area / self.dVdrho
+        self.grho_grid = self.area_grid / self.dVdrho_grid
 
         # normalize area and grho
         self.area = self.area / self.a_minor_desc**2

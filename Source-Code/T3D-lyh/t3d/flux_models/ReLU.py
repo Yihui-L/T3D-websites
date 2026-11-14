@@ -45,7 +45,7 @@ class ReLU_FluxModel(FluxModel):
         else:
             particle_factor = heat_factor = np.ones(shape)
         species_list = list(species.get_species_list())
-        n = [s.n().toFluxProfile().profile for s in species_list]
+        n = species.get_densities_on_flux_grid()
         pressure = [s.p().toFluxProfile().profile for s in species_list]
 
         def evaluate(kn, kT, kp):

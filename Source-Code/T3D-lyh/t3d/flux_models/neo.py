@@ -3,6 +3,7 @@ import subprocess
 import os
 import sys
 from pathlib import Path
+import shutil
 from t3d.FluxModels import FluxModel
 from t3d.flux_models._external import (
     available_cpus, require_outputs, run_in_parallel, run_workspace, trial_tag, worker_count,
@@ -14,8 +15,10 @@ class neo_FluxModel(FluxModel):
     def __init__(self, pars, grid, time):
 
         super().__init__(pars, grid, time)
-        NEO_PATH = os.environ.get("GACODE_ROOT") or ""
-        self.neo_app = str(Path(NEO_PATH, "neo").resolve())
+        root = os.environ.get("GACODE_ROOT")
+        if not root:
+            raise RuntimeError("NEO requires GACODE_ROOT to be set")
+        self.neo_app = str(Path(root, "neo").resolve())
 
         neo_template = pars.get("neo_template")
         out_dir = run_workspace(pars.get("neo_outputs", "neo"))
@@ -44,7 +47,8 @@ class neo_FluxModel(FluxModel):
             print(f"      creating new output dir {out_dir}")
             os.mkdir(out_dir)
 
-        found_neo = os.path.exists(self.neo_app)
+        found_neo = (Path(self.neo_app, "bin/neo_parse.py").is_file() and
+                     shutil.which(str(Path(self.neo_app, "src/neo"))) is not None)
         if not found_neo:
             print("  Error: neo executable not found!"
                   "Make sure the GACODE_ROOT environment variable is set.")
@@ -140,7 +144,7 @@ class neo_FluxModel(FluxModel):
 
     def compute_bunit(self, geo):
         # Compute Bunit/B0 to convert rho_unit to rho_s
-        theta = np.linspace(0, 2 * np.pi, 256)
+        theta = np.linspace(0, 2 * np.pi, 256, endpoint=False)
         bunit = np.zeros(self.N_fluxtubes)
         for r_id in np.arange(self.N_fluxtubes):
             kappa = geo.kappa[r_id]
@@ -182,9 +186,20 @@ class neo_FluxModel(FluxModel):
 
         data = {}
         with open(fin) as f:
-            for line in f.readlines():
-                data[line.split('=')[0]] = line.split('=')[-1].strip()
-
+            for lineno, line in enumerate(f, 1):
+                entry = line.split("#", 1)[0].strip()
+                if not entry:
+                    continue
+                key, sep, value = entry.partition("=")
+                if not sep or not key.strip() or not value.strip():
+                    raise ValueError(f"Malformed NEO input at {fin}:{lineno}")
+                data[key.strip().upper()] = value.strip()
+        if any(int(data.get(key, expected)) != expected
+               for key, expected in (("N_RADIAL", 1), ("PROFILE_MODEL", 1), ("SILENT_FLAG", 0))):
+            raise ValueError("T3D needs a local NEO run (N_RADIAL=1, PROFILE_MODEL=1, SILENT_FLAG=0)")
+        if int(data.get("SIM_MODEL", 2)) not in (1, 2):
+            raise ValueError("T3D needs NEO's DKE transport output (SIM_MODEL=1 or 2)")
+        data.update(N_RADIAL=1, PROFILE_MODEL=1, SILENT_FLAG=0)
         self.inputs = data
 
     def write_input(self, fin, data):
@@ -197,14 +212,13 @@ class neo_FluxModel(FluxModel):
     def run_neo(self, rho, kns, kts, species, geo, pert_id, norms):
 
         trial = trial_tag(self.time)
-        neo_inputs = self.inputs
-
-        Tr = species.electron.T().toFluxProfile().profile
-        Br = geo.Btor * self.bunit_over_b0
-        rhostar = norms.rho_star * np.sqrt(Tr) / Br
+        Tr = species.ref_species.T().toFluxProfile().profile
+        Br = np.abs(geo.Btor * self.bunit_over_b0)
+        rhostar = norms.rho_star * np.sqrt(Tr / norms.vtfac) / Br
 
         ns, Ts, nu_ss = species.get_profiles_on_flux_grid(normalize=True, a_minor=geo.a_minor)
-        N_species = species.N_species
+        masses = species.get_masses(normalize=True)
+        charges = species.get_charges(normalize=False)
 
         # loop over radii
         pths = []
@@ -215,6 +229,7 @@ class neo_FluxModel(FluxModel):
             pths.append(pth)
             fin = os.path.join(pth, 'input.neo')
 
+            neo_inputs = self.inputs.copy()
             neo_inputs['Q'] = geo.qsf[r_id]
             neo_inputs['SHEAR'] = geo.shat[r_id]
             neo_inputs['SHIFT'] = geo.rmajor_prime[r_id]
@@ -229,15 +244,15 @@ class neo_FluxModel(FluxModel):
             # set species parameters
             neo_inputs['N_SPECIES'] = species.N_species
             for isp in range(species.N_species):
-                neo_inputs[f'MASS_{isp+1}'] = species.get_masses(normalize=True)[isp]
-                neo_inputs[f'Z_{isp+1}'] = species.get_charges(normalize=True)[isp]
+                neo_inputs[f'MASS_{isp+1}'] = masses[isp]
+                neo_inputs[f'Z_{isp+1}'] = charges[isp]
                 neo_inputs[f'DENS_{isp+1}'] = ns[isp, r_id]
                 neo_inputs[f'TEMP_{isp+1}'] = Ts[isp, r_id]
                 neo_inputs[f'DLNNDR_{isp+1}'] = kns[isp, r_id]
                 neo_inputs[f'DLNTDR_{isp+1}'] = kts[isp, r_id]
             # Only NU_1 is required in NEO
-            # Account for vt_sqrt_2 = True
-            neo_inputs['NU_1'] = nu_ss[0, r_id] * np.sqrt(2)
+            # NEO's normalizing speed is sqrt(T_norm/m_norm).
+            neo_inputs['NU_1'] = nu_ss[0, r_id] * np.sqrt(norms.vtfac)
 
             # write input file
             self.write_input(fin, neo_inputs)
@@ -272,16 +287,32 @@ class neo_FluxModel(FluxModel):
         pflux = np.zeros((species.N_species, self.N_fluxtubes))
         qflux = np.zeros((species.N_species, self.N_fluxtubes))
         heat = np.zeros((species.N_species, self.N_fluxtubes))
+        if len(f_j) != self.N_fluxtubes:
+            raise ValueError("NEO requires one output per transport face")
         for r_id, fout in enumerate(f_j):
             with open(fout) as f:
-                data = f.readlines()[0].split()
-                for isp in range(species.N_species):
-                    pflux[isp, r_id] = float(data[5+isp*8])
-                    qflux[isp, r_id] = float(data[6+isp*8])
+                rows = [line.split() for line in f if line.strip()]
+            ncol = 5 + 8 * species.N_species
+            if len(rows) != 1 or len(rows[0]) != ncol:
+                raise ValueError(f"Expected one row of {ncol} columns in {fout}")
+            data = np.array([float(x.replace("D", "E").replace("d", "e")) for x in rows[0]])
+            if not np.all(np.isfinite(data)) or not np.isclose(data[0], self.rho[r_id], rtol=6e-6, atol=1e-8):
+                raise ValueError(f"Invalid NEO transport data or radius in {fout}")
+            pflux[:, r_id] = data[5::8]
+            qflux[:, r_id] = data[6::8]
 
-        # Convert to trinity units
-        pflux = pflux / (norms.rho_star**2 * np.sqrt(2))
-        qflux = qflux / (norms.rho_star**2 * np.sqrt(2))
+        # out.neo.transport is normalized to n_norm * sqrt(T_norm/m_norm)
+        # (times T_norm for energy). The T3D local gyroBohm unit additionally
+        # contains rho_star^2 * T_norm / Btor^2 and the speed convention.
+        ref = species.ref_species
+        n, p = ref.n(), ref.p()
+        n_face, p_face = n.toFluxProfile().profile, p.toFluxProfile().profile
+        ref_idx = next(i for i, s in enumerate(species.get_species_list()) if s is ref)
+        norm_n = species.get_densities_on_flux_grid()[ref_idx]
+        norm_T = ref.T().toFluxProfile().profile
+        scale = geo.Btor**2 * norm_n * np.sqrt(norm_T / norms.vtfac) / norms.rho_star**2
+        pflux *= scale / (p**1.5/n**.5).toFluxProfile().profile
+        qflux *= scale * norm_T / (p_face**2.5/n_face**1.5)
         # Clamp the value to qmax near the magnetic axis
         # if qmax>0 (default qmax=0).
         # Convergence near the magnetic axis may be tricky

@@ -1,10 +1,10 @@
 from t3d.trinity_lib import TrinityEngine
 
-import sys
 import argparse
 from importlib import metadata
+from pathlib import Path
 # import time
-from t3d.Logbook import info, errr, bold, log
+from t3d.Logbook import info, bold, log
 
 
 def print_time(dt):
@@ -30,6 +30,10 @@ def main():
     # Parse command line arguments
     args = parser.parse_args()
 
+    fin = args.input_file
+    if Path(fin).suffix != ".in":
+        parser.error("T3D input file must have the .in extension")
+
     # Create the log file
     if args.log:
         log_file = args.log
@@ -41,28 +45,23 @@ def main():
                      file_handler=log_file)
 
     bold("Running T3D calculation.")
-    info(f"Version = {metadata.version('t3d')}")
-
-    fin = args.input_file
-    if fin[-3:] != '.in':
-        errr(" T3D input file must have '.in' extension")
-        sys.exit()
+    try:
+        version = metadata.version('t3d')
+    except metadata.PackageNotFoundError:
+        version = "source checkout"
+    info(f"Version = {version}")
 
     info("\n  Loading input file: " + fin)
     info("  Logging output file: " + log_file)
 
     # start_time = time.time()
 
-    # Start t3d
-    engine = TrinityEngine(fin)
-    engine.evolve_profiles()
-
-    # end_time = time.time()
-    # delta_t = end_time - start_time
-
-    bold('\nT3D Complete, exiting normally.')
-
-    log.finalize()
+    try:
+        engine = TrinityEngine(fin)
+        engine.evolve_profiles()
+        bold('\nT3D Complete, exiting normally.')
+    finally:
+        log.finalize()
 
 
 if __name__ == "__main__":

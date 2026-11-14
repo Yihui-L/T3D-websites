@@ -142,3 +142,29 @@ class TestBeamInterface(unittest.TestCase):
                    side_effect=subprocess.CalledProcessError(2,"xbeams3d")):
             with self.assertRaises(subprocess.CalledProcessError):
                 m.run_beams3d(n,T,self.sp,self.geo)
+
+
+    def test_diagnostic_only_implicit_source_has_no_perturbed_jobs(self):
+        m = self.model(implicit=True)
+        self.sp.n_evolve_keys = []
+        self.sp.T_evolve_keys = []
+        arr = np.zeros((self.sp.N_species,self.sp.N_radial))
+        with (patch.object(m,"run_beams3d",return_value=self.root/"synthetic") as run,
+              patch.object(m,"read_beams3d_deposition",return_value=(arr,arr))):
+            m.compute_sources(self.sp,self.geo,self.sp.norms)
+            m.collect_results(self.sp,self.geo,self.sp.norms)
+        self.assertEqual(run.call_count,1)
+        self.assertIsNone(m.source_jacobian)
+
+    def test_numerical_reference_rescaling_cannot_change_beam_equilibrium(self):
+        m=self.model()
+        n,T,_ = self.sp.get_profiles_on_grid()
+        for option in ("vmec","desc"):
+            for size,B_scale in ((1.25,1.),(1.,1.3)):
+                geo = SimpleNamespace(geo_file=str(self.vmec),geo_option=option,
+                                      a_minor=size,B_scale=B_scale,a_minor_vmec=1.,a_minor_desc=1.)
+                with (self.subTest(option=option,size=size,B_scale=B_scale),
+                      patch("t3d.source_models.BEAMS3D.subprocess.run") as run):
+                    with self.assertRaisesRegex(ValueError,"disable T3D geometry rescaling"):
+                        m.run_beams3d(n,T,self.sp,geo)
+                    run.assert_not_called()

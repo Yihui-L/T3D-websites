@@ -119,10 +119,10 @@ class TestBackendStateAndDiagnostics(TestCase):
     def test_sfincs_rejects_truncated_and_unconverged_hdf5(self):
         m=SFINCS_FluxModel.__new__(SFINCS_FluxModel)
         m.__dict__.update(info=Mock(),log=Mock(),label="SFINCS",N_fluxtubes=3,namelist={"physicsparameters":{}})
-        item=SimpleNamespace(n=lambda:GridProfile(1.,self.grid), T=lambda:GridProfile(1.,self.grid))
+        item=SimpleNamespace(n=lambda:GridProfile(1.,self.grid), p=lambda:GridProfile(1.,self.grid))
         species=SimpleNamespace(N_species=1,ref_species=item,get_species_list=lambda:[item])
         geo=SimpleNamespace(Btor=1.,grho=FluxProfile(1.,self.grid))
-        norms=SimpleNamespace(rho_star=1.,a_meters=1.)
+        norms=SimpleNamespace(rho_star=1.,a_meters=1.,vtfac=1.)
         path=self.root/"partial.h5"
         def write(finished=None, converged=None, nan=False):
             with h5py.File(path,"w") as f:

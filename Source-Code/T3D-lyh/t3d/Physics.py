@@ -58,6 +58,16 @@ class Physics():
         self.source_p_down_multiplier = dynamics_parameters.get('p_down_multiplier', 0.9)
         self.source_p_aux_max_MW = dynamics_parameters.get('p_aux_max_MW', 100)
         self.source_p_aux_min_MW = dynamics_parameters.get('p_aux_min_MW', 0.01)
+        if self.update_source:
+            limits = (self.source_Q_threshold_low, self.source_Q_threshold_high,
+                      self.source_p_aux_min_MW, self.source_p_aux_max_MW,
+                      self.source_p_down_multiplier, self.source_p_up_multiplier)
+            if (not all(np.isfinite(x) for x in limits)
+                    or not 0 <= self.source_Q_threshold_low <= self.source_Q_threshold_high
+                    or not 0 <= self.source_p_aux_min_MW <= self.source_p_aux_max_MW
+                    or not 0 < self.source_p_down_multiplier <= 1 <= self.source_p_up_multiplier):
+                raise ValueError("Auxiliary source control requires ordered nonnegative limits, "
+                                 "0 < p_down_multiplier <= 1 and p_up_multiplier >= 1")
         self.update_edge = dynamics_parameters.get('update_edge', False)
         self.edge_p_ratio = dynamics_parameters.get('p_threshold_ratio', 4)
         self.edge_p_multiplier = dynamics_parameters.get('p_edge_multiplier', 1.05)
@@ -137,6 +147,8 @@ class Physics():
                     info(f'Zeff using target int {self.Zeff_int}')
                     target = self.Zeff_int
                     volume_integral = self.geo.volume_integrate(Zeff_prof, normalized=False, interpolate=True)
+                    if not np.isfinite(volume_integral) or volume_integral <= 0:
+                        raise ValueError('Gaussian Zeff cannot be normalized with zero or invalid radial weight')
                     self.Zeff_prof = (target / volume_integral) * Zeff_prof
                 else:
                     info(f'Zeff using height {self.Zeff_height}')
@@ -146,12 +158,7 @@ class Physics():
                 x = grid.rho
                 self.Zeff_prof = GridProfile(coefs[0]*np.exp(-coefs[1]*x**2 - coefs[2]*x**4 - coefs[3]*x**6), grid)
             elif self.Zeff_shape == 'manual':
-                from scipy.interpolate import PchipInterpolator
-                profXY = np.array([[float(tok) for tok in row.split()] for row in self.Zeff_profstr.split(';')])
-                if profXY.ndim != 2 or profXY.shape[0] != 2:
-                    raise ValueError('Manual Zeff requires semicolon-separated radius and Zeff rows.')
-                profX,profY = profXY
-                self.Zeff_prof = GridProfile(PchipInterpolator(profX,profY)(grid.rho/grid.rho_edge), grid)
+                self.Zeff_prof = Species._manual_profile(self.Zeff_profstr, grid, 'Zeff')
             else:
                 raise ValueError('Invalid Zeff profile shape in Trinity input')
 
@@ -170,6 +177,8 @@ class Physics():
             Zeff = self.Zeff_prof
 
         if s.type == 'electron':
+            if Zeff is None or not np.all(np.isfinite(Zeff.profile) & (Zeff.profile > 0)):
+                raise ValueError("Bremsstrahlung requires a finite positive Zeff profile")
             P_MWm3 = 5.35e3*s.n()**2*Zeff*s.T()**0.5/1e6
             # convert to code units
             return P_MWm3 / self.norms.P_ref_MWm3
@@ -579,17 +588,18 @@ class Physics():
         return tauE_ISS04
 
     def compute_sources(self, species, geometry, norms):
-        for k in species.n_evolve_keys:
-            s = species[k]
-            s.Sn = s.Sn_labeled['aux']
-
+        # Rebuild totals from a single label snapshot each evaluation. A
+        # species without its own equation still exposes external deposition
+        # in the separately collected diagnostics, never stale internal RHS.
+        n_keys, T_keys = set(species.n_evolve_keys), set(species.T_evolve_keys)
         for s in species.get_species_list():
+            s.Sn = s.Sn_labeled['aux'] if s.type in n_keys else GridProfile(0., self.grid)
+            s.Sp = s.Sp_labeled['aux'] if s.type in T_keys else GridProfile(0., self.grid)
             for label in ('alpha', 'rad', 'heating', 'coll'):
                 s.Sp_labeled[label] = GridProfile(0., self.grid)
 
         for k in species.T_evolve_keys:
             s = species[k]
-            s.Sp = s.Sp_labeled['aux']
 
             if self.alpha_heating:
                 s.Sp_labeled['alpha'] = self.compute_alpha_heating(s, species)

@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 from scipy.interpolate import interp1d
 from collections import defaultdict
 from netCDF4 import Dataset
@@ -51,9 +52,21 @@ class Import():
     def keys(self):
         return [k for k in self.imported.data.keys()]
 
+    @staticmethod
+    def _check_profile(rho, value):
+        rho = np.ma.asarray(rho, dtype=float).filled(np.nan)
+        value = np.ma.asarray(value, dtype=float).filled(np.nan)
+        if (rho.ndim != 1 or rho.size < 2 or value.shape != rho.shape
+                or not np.all(np.isfinite(rho)) or not np.all(np.diff(rho) > 0)):
+            raise ValueError("Profile input requires a strictly increasing finite 1D radial grid and matching values.")
+        if not np.all(np.isfinite(value)):
+            raise ValueError("Profile input contains nonfinite values.")
+        return rho, value
+
     def get_density(self, key=None, species_mass=2.0, species_charge=None, tag=None, interpolate=True, n_edge=None, norms=None):
         rho, n = self.imported.get_density(key=key, species_mass=species_mass, species_charge=species_charge, tag=tag, norms=norms)
 
+        rho, n = self._check_profile(rho, n)
         # interpolate onto Trinity grid
         if interpolate:
             f = interp1d(rho, n, bounds_error=False, fill_value='extrapolate')
@@ -68,6 +81,7 @@ class Import():
     def get_temperature(self, key=None, species_mass=2.0, species_charge=None, tag=None, interpolate=True, T_edge=None, norms=None):
         rho, T = self.imported.get_temperature(key=key, species_mass=species_mass, species_charge=species_charge, tag=tag, norms=norms)
 
+        rho, T = self._check_profile(rho, T)
         # interpolate onto Trinity grid
         if interpolate:
             f = interp1d(rho, T, bounds_error=False, fill_value='extrapolate')
@@ -304,18 +318,24 @@ class TrinityReader():
             raise NotImplementedError('Importing a geometry object requires a Trinity .npy output file.')
         if not np.array_equal(grid.rho, self.rho):
             raise ValueError('Importing a saved Trinity geometry requires the original radial grid.')
-        # Store info on beta_prime
-        beta_prime_const = geo.beta_prime_const
-        use_beta_prime_alpha = geo.use_beta_prime_alpha
-        force_beta = geo.force_beta_prime_species
-        # Load geometry for restart file
-        for k in self.data['geo_obj'].__dict__.keys():
-            setattr(geo, k, getattr(self.data['geo_obj'], k))
-
-        # Overwrite info on beta_prime
-        geo.beta_prime_const = beta_prime_const
-        geo.use_beta_prime_alpha = use_beta_prime_alpha
-        geo.force_beta_prime_species = force_beta
+        saved = self.data['geo_obj']
+        if getattr(saved,'geo_option',None) != 'miller':
+            raise ValueError("T3D geometry restart currently requires a saved Miller geometry.")
+        # Copy only imported data, not the old run's flux executables,
+        # grids or controllers. The new input owns those runtime objects.
+        metrics = ('area', 'area_grid', 'grho', 'grho_grid', 'rhotor', 'rminor',
+                   'rmaj', 'rmajor_prime', 'qsf', 'shat', 'kappa', 'tri', 'delta',
+                   'kappa_prime', 's_kappa', 'delta_prime', 's_delta',
+                   'beta_prime_alpha', 'B_ref', 'a_ref')
+        for name in metrics:
+            if hasattr(saved,name):
+                value = getattr(saved,name)
+                if isinstance(value,(GridProfile,FluxProfile)):
+                    value = type(value)(value.profile.copy(),grid)
+                setattr(geo,name,value)
+        for name in ('Btor','B0','a_minor','AspectRatio','iota23'):
+            if hasattr(saved,name):
+                setattr(geo,name,getattr(saved,name))
         if geo.force_beta_prime_species:
             geo.beta_prime = np.array(self.data['species'][self.frame].beta_prime)
 
@@ -401,13 +421,16 @@ class JettoReader():
             if time is None:
                 self.time_index = -1
             else:
-                self.time_index = np.argmin(abs(self.time - f['time'][:].data))
+                timeline = np.ma.asarray(f['time'][:],dtype=float).filled(np.nan)
+                if not np.isfinite(self.time) or not np.all(np.isfinite(timeline)):
+                    raise ValueError("JETTO time stamps and requested time must be finite.")
+                self.time_index = np.argmin(abs(self.time - timeline))
             if flux_label == "rminor":
                 rho = (f['R'][self.time_index, :] - f['RI'][self.time_index, :]) / 2
                 rho = rho / rho[-1]
             elif flux_label == "polflux":
                 psi = f['PSI'][self.time_index, :].data
-                rho = (psi - psi[0]) / psi[-1]
+                rho = (psi - psi[0]) / (psi[-1] - psi[0])
             elif flux_label in ("torflux", "rhotor"):
                 rho = f['X'][self.time_index, :].data
             else:
@@ -418,7 +441,7 @@ class JettoReader():
     def get_density(self, key=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
         with Dataset(self.finput, mode='r') as f:
             if key:
-                n = f[key][self.time_index, :].data
+                n = np.ma.asarray(f[key][self.time_index, :],dtype=float).filled(np.nan)
             else:
                 raise NotImplementedError(
                     "JettoReader requires species key to be specified")
@@ -431,7 +454,7 @@ class JettoReader():
     def get_temperature(self, key=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
         with Dataset(self.finput, mode='r') as f:
             if key:
-                T = f[key][self.time_index, :].data
+                T = np.ma.asarray(f[key][self.time_index, :],dtype=float).filled(np.nan)
             else:
                 raise NotImplementedError(
                     "JettoReader requires species key to be specified")
@@ -448,13 +471,12 @@ class JettoReader():
                     "JettoReader requires species keys to be specified")
             Sn_tot = 0
             for key in ([keys] if isinstance(keys, str) else keys):
-                Sn = f[key][self.time_index, :].data
+                Sn = np.ma.asarray(f[key][self.time_index, :],dtype=float).filled(np.nan)
                 Sn_tot += Sn
 
         # convert to Trinity units
         # JETTO sources are in 1/(m^3 s)
-        if norms:
-            Sn_tot = Sn_tot * 1e-20 / norms.Sn_ref_SI20
+        Sn_tot = Sn_tot * 1e-20 / (1. if norms is None else norms.Sn_ref_SI20)
 
         return self.rho, Sn_tot
 
@@ -465,13 +487,12 @@ class JettoReader():
                     "JettoReader requires species keys to be specified")
             Sp_tot = 0
             for key in ([keys] if isinstance(keys, str) else keys):
-                Sp = f[key][self.time_index, :].data
+                Sp = np.ma.asarray(f[key][self.time_index, :],dtype=float).filled(np.nan)
                 Sp_tot += Sp
 
         # convert to Trinity units
         # JETTO sources are in W/m^3
-        if norms:
-            Sp_tot = Sp_tot * 1e-6 / norms.P_ref_MWm3
+        Sp_tot = Sp_tot * 1e-6 / (1. if norms is None else norms.P_ref_MWm3)
 
         return self.rho, Sp_tot
 
@@ -585,17 +606,21 @@ class TranspReader():
         self.time = time
         self.flux_label = flux_label
 
-        if fin[-3:] == '.nc' or fin[-4:] == '.cdf':
+        fin = Path(fin)
+        if fin.suffix.lower() in {'.nc', '.cdf'}:
             self.read_nc(fin, time=self.time)
         else:
             self.read_ascii(fin, time=self.time)
 
     def read_nc(self, fin2d, time=None):
-        assert False, 'TRANSP netcdf reader not yet implemented.'
+        raise NotImplementedError('TRANSP NetCDF import is not implemented; use a TRANSP ASCII U-file.')
 
     def read_ascii(self, fin2d, time=None):
-        fin0d = fin2d.replace('2d', '0d')
-        fin1d = fin2d.replace('2d', '1d')
+        fin2d = Path(fin2d)
+        if not fin2d.stem.endswith('2d'):
+            raise ValueError("TRANSP ASCII profile filename stem must end in '2d'.")
+        fin0d = fin2d.with_name(fin2d.stem[:-2]+'0d'+fin2d.suffix)
+        fin1d = fin2d.with_name(fin2d.stem[:-2]+'1d'+fin2d.suffix)
 
         self.meta = {}
         self.data = {}
@@ -658,138 +683,88 @@ class TranspReader():
             self.data[obj.label] = obj.data
 
     def find_ion_species_index(self, species_mass, species_charge=None):
-        masses = [float(self.data[f'NM{i}A']) for i in np.arange(1, 10)]
-        charges = [float(self.data[f'NM{i}Z']) for i in np.arange(1, 10)]
+        # Match both TRANSP identity fields (isobars can share a mass).
+        # Never substitute a copy of NE for a missing ion profile.
+        candidates = []
+        for i in range(1, 10):
+            try:
+                mass = float(self.data[f'NM{i}A'])
+                charge = float(self.data[f'NM{i}Z'])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if mass > 0 and charge > 0:
+                candidates.append((i, mass, charge))
+        if not candidates and 'NM1' in self.data:
+            candidates = [(1, 2., 1.)]  # legacy lone thermal deuterium channel
+        matches = [i for i, m, z in candidates if np.isclose(m, species_mass, rtol=1e-3, atol=0)
+                   and (species_charge is None or np.isclose(z, species_charge, rtol=1e-3, atol=0))]
+        if not matches:
+            raise ValueError(f"No matching TRANSP ion for mass={species_mass}, charge={species_charge}; specify a profile key.")
+        if len(matches) > 1:
+            raise ValueError(f"TRANSP ion identity is ambiguous for mass={species_mass}, charge={species_charge}; specify charge or key.")
+        return matches[0]
 
-        if all(m < 0 for m in masses):
-            masses = [2.0]
-            charges = [1.0]
+    def _profile_on_file_grid(self, key):
+        if key not in self.meta or key not in self.data:
+            raise ValueError(f"TRANSP profile {key!r} not found.")
+        return np.asarray(self.meta[key].rho), np.asarray(self.data[key])
 
-        try:
-            index = masses.index(species_mass)
-        except RuntimeError:
-            errr(f'Error: species with mass {species_mass} not found in TRANSP file.')
-
-        if species_charge:
-            assert species_charge == charges[index]
-
-        return index + 1  # 1-based indexing
+    def _radial_coordinate(self, rhotor):
+        if self.flux_label != 'rminor':
+            return rhotor
+        axis, minor = self._profile_on_file_grid('RMINOR')
+        # Existing U-file exports generally use the same toroidal grid.
+        if np.array_equal(axis, rhotor):
+            return minor/float(self.data['AMIN'])
+        # Some U-files store geometry and thermodynamic channels at
+        # different centers near the magnetic axis. r(0)=0 is exact.
+        if axis[0] > 0:
+            axis, minor = np.r_[0., axis], np.r_[0., minor]
+        return interp1d(axis, minor, bounds_error=False, fill_value='extrapolate')(rhotor)/float(self.data['AMIN'])
 
     def get_density(self, key=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
-        if key:
-            rhotor, n = self.meta[key].rho, self.data[key]
-        elif species_charge == -1:
-            rhotor, n = self.meta['NE'].rho, self.data['NE']
-        else:
-            try:
-                index = self.find_ion_species_index(species_mass, species_charge)
-                rhotor, n = self.meta[f'NM{index}'].rho, self.data[f'NM{index}']
-            except:
-                rhotor, n = self.meta['NE'].rho, self.data['NE']
-
-        if self.flux_label == "rminor":
-            try:
-                rmin = self.data['RMINOR']/self.data['AMIN']
-            except:
-                rmin = self.data['RMINOR']/np.expand_dims(self.data['AMIN'], axis=1)
-            rho = rmin
-        else:
-            rho = rhotor
-
-        # convert to Trinity units, 10^20 m^-3
-        n = n*1e-20
-
-        return rho, n
+        if key is None:
+            key = 'NE' if species_charge == -1 else f'NM{self.find_ion_species_index(species_mass, species_charge)}'
+        rho, n = self._profile_on_file_grid(key)
+        return self._radial_coordinate(rho), n*1e-20
 
     def get_temperature(self, key=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
-        if key:
-            rhotor, T = self.meta[key].rho, self.data[key]
-        elif species_charge == -1:
-            rhotor, T = self.meta['TE'].rho, self.data['TE']
-        else:
-            rhotor, T = self.meta['TI'].rho, self.data['TI']
+        rho, T = self._profile_on_file_grid(key or ('TE' if species_charge == -1 else 'TI'))
+        return self._radial_coordinate(rho), T*1e-3
 
-        if self.flux_label == "rminor":
-            try:
-                rmin = self.data['RMINOR']/self.data['AMIN']
-            except:
-                rmin = self.data['RMINOR']/np.expand_dims(self.data['AMIN'], axis=1)
-            rho = rmin
-        else:
-            rho = rhotor
-
-        # convert to Trinity units, keV
-        T = T*1e-3
-
-        return rho, T
+    def _sum_source(self, keys, species_mass, species_charge, electron, ion, negative):
+        automatic = keys is None
+        if automatic:
+            if species_charge == -1:
+                keys = electron
+            else:
+                keys = ion if self.find_ion_species_index(species_mass, species_charge) == 1 else []
+        keys = [keys] if isinstance(keys, str) else list(keys)
+        total, rho = None, None
+        for key in keys:
+            if automatic and key not in self.data:
+                continue  # optional diagnostics in TRANSP exports
+            axis, values = self._profile_on_file_grid(key)
+            if total is None:
+                rho, total = axis, np.zeros_like(values, dtype=float)
+            elif not np.array_equal(rho, axis) or total.shape != values.shape:
+                raise ValueError(f"TRANSP source {key!r} does not share the radial grid of the other channels.")
+            total += -values if key in negative else values
+        if total is None:
+            rho, values = self._profile_on_file_grid('NE')
+            total = np.zeros_like(values, dtype=float)
+        return self._radial_coordinate(rho), total
 
     def get_density_source(self, keys=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
-        _, Sn_tot = self.get_density(key='NE')
-        Sn_tot = 0*Sn_tot
-
-        # smart defaults
-        if keys is None:
-            if species_charge == -1:
-                keys = ['SBE', 'SNBIE', 'DNER']
-            elif self.find_ion_species_index(species_mass, species_charge) == 1:
-                keys = ['SNBII', 'SWALL', 'DNER']
-
-        for key in keys:
-            if key in self.data.keys():
-                rhotor, Sn = self.meta[key].rho, self.data[key]
-                if key == 'DNER':
-                    Sn = -1*Sn
-                Sn_tot += Sn
-
-        if self.flux_label == "rminor":
-            try:
-                rmin = self.data['RMINOR']/self.data['AMIN']
-            except:
-                rmin = self.data['RMINOR']/np.expand_dims(self.data['AMIN'], axis=1)
-            rho = rmin
-        else:
-            rho = rhotor
-
-        # convert to Trinity units
-        # TRANSP sources are in 1/(m^3 s)
-        if norms:
-            Sn_tot = Sn_tot*1e-20/norms.Sn_ref_SI20
-
-        return rho, Sn_tot
+        rho, total = self._sum_source(keys, species_mass, species_charge, ['SBE', 'SNBIE', 'DNER'],
+                                      ['SNBII', 'SWALL', 'DNER'], {'DNER'})
+        return rho, total*1e-20/(1. if norms is None else norms.Sn_ref_SI20)
 
     def get_pressure_source(self, keys=None, species_mass=2.0, species_charge=None, tag=None, norms=None):
-        _, Sp_tot = self.get_density(key='NE')
-        Sp_tot = 0*Sp_tot
-
-        # smart defaults
-        if keys is None:
-            if species_charge == -1:
-                keys = ['QNBIE', 'QICRHE', 'QECHE', 'QLHE', 'QIBWE', 'QWALLE', 'QOHM', 'DWER']
-            elif self.find_ion_species_index(species_mass, species_charge) == 1:
-                keys = ['QNBII', 'QICRHI', 'QECHI', 'QLHI', 'QIBWI', 'QWALLI', 'DWIR']
-
-        for key in keys:
-            if key in self.data.keys():
-                rhotor, Sp = self.meta[key].rho, self.data[key]
-                if key == 'DWER' or key == 'DWIR':
-                    Sp = -1*Sp
-                Sp_tot += Sp
-
-        if self.flux_label == "rminor":
-            try:
-                rmin = self.data['RMINOR']/self.data['AMIN']
-            except:
-                rmin = self.data['RMINOR']/np.expand_dims(self.data['AMIN'], axis=1)
-            rho = rmin
-        else:
-            rho = rhotor
-
-        # convert to Trinity units
-        # TRANSP sources are in W/m^3
-        if norms:
-            Sp_tot = Sp_tot*1e-6/norms.P_ref_MWm3
-
-        return rho, Sp_tot
+        rho, total = self._sum_source(keys, species_mass, species_charge,
+                                      ['QNBIE', 'QICRHE', 'QECHE', 'QLHE', 'QIBWE', 'QWALLE', 'QOHM', 'DWER'],
+                                      ['QNBII', 'QICRHI', 'QECHI', 'QLHI', 'QIBWI', 'QWALLI', 'DWIR'], {'DWER', 'DWIR'})
+        return rho, total*1e-6/(1. if norms is None else norms.P_ref_MWm3)
 
     def get_geometry(self, geo, grid, interpolate=True):
 

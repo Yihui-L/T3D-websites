@@ -25,7 +25,7 @@ class TestFluxConsistency(unittest.TestCase):
         for kind, charge, density in zip(("electron", "carbon", "deuterium"), charges, densities):
             profile = GridProfile(density, grid)
             species.species_dict[kind] = SimpleNamespace(
-                type=kind, Z=charge, rel_step=0.0, abs_step=0.5,
+                type=kind, Z=charge, rel_step=0.0, abs_step=0.5, evolve_temperature=True,
                 n=lambda p=profile: p, get_fluxgrads=lambda: (k, 2*k, 3*k),
             )
         species.qneut_species = species["deuterium"]

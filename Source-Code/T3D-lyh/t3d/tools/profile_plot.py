@@ -211,6 +211,10 @@ class plotter:
         self.area = _read_data('geo', 'area')
         self.grho = _read_data('geo', 'grho')
         self.G_fac = _read_data('geo', 'G_fac')
+        try:
+            self.t_G_fac = np.asarray(_read_data('time', 't_G_fac'))
+        except (KeyError, ValueError, TypeError):
+            self.t_G_fac = np.broadcast_to(self.G_fac, (self.N, len(self.rho)))
         self.a_minor = _read_data('geo', 'a_minor', as_array=False)
 
         # Geo

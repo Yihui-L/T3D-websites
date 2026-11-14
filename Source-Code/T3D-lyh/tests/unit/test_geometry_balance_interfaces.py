@@ -106,6 +106,7 @@ class TestGeometryAndBalance(unittest.TestCase):
 
     def test_engine_drains_backends_on_collection_error(self):
         e=TrinityEngine.__new__(TrinityEngine)
+        e.time=SimpleNamespace(diagnostics_current=True)
         model, source=Mock(), Mock()
         e.flux_models=SimpleNamespace(get_models_list=lambda:[model])
         e.source_models=SimpleNamespace(get_sources_list=lambda:[source])
@@ -114,3 +115,4 @@ class TestGeometryAndBalance(unittest.TestCase):
             e._evaluate_transport_terms()
         model.cancel_pending.assert_called_once()
         source.cancel_pending.assert_called_once()
+        self.assertFalse(e.time.diagnostics_current)

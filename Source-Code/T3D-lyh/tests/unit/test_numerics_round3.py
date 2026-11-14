@@ -146,6 +146,7 @@ class TestNumericsAudit(unittest.TestCase):
             return base,base if pert_T is None else base+step,2*base,step
         sp = SimpleNamespace(N_species=1,n_evolve_keys=[],T_evolve_keys=["D"],
                              get_species_list=lambda: [s],get_grads_on_flux_grid=grads,
+                             get_densities_on_flux_grid=lambda: base,
                              add_flux=Mock(),add_dflux_dkT=Mock())
         model.compute_fluxes(sp,None,None)
         particle,heat=sp.add_flux.call_args.args

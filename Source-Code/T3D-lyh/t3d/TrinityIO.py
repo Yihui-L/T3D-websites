@@ -1,4 +1,6 @@
 import os
+import json
+from datetime import datetime, time
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -36,36 +38,40 @@ def _atomic_output(filename):
         tmp_path.unlink(missing_ok=True)
 
 
-def bool2str(val):
-    """Bool to a lower-case string"""
-    return str(val).lower()
+def _toml_value(value):
+    """Write the TOML value types produced by tomllib without losing order."""
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False).replace(chr(127), r"\u007f")
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, (date, datetime, time)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(x) for x in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{_toml_value(k)} = {_toml_value(v)}" for k, v in value.items()) + "}"
+    raise TypeError(f"Unsupported TOML value {value!r}")
 
 
-def writeLine(s,pair,f):
-
-    key,val = pair
-    if type(val) is str:
-        val = f"'{val}'"  # add quotes
-
-    if type(val) is bool:
-        val = bool2str(val)
-
-    if type(val) is dict:
-        out = "{"
-        for k,v in val.items():
-
-            if type(v) is bool:
-                v = bool2str(v)
-
-            out += "%s = %s, " % (k,v)
-
-        out = out[:-2]  # get rid of trailing commas
-        out += "}"
-
-        # one problems: bool
-
-        val = out
-    print(s.format(key, val), file=f)
+def _toml_text(data):
+    # Root key/value assignments have to precede every table header; other
+    # values can be expressed with TOML's inline tables and arrays.
+    scalars = []
+    tables = []
+    for key, value in data.items():
+        key = _toml_value(key)
+        if isinstance(value, dict):
+            tables.append("[" + key + "]\n" +
+                          "".join(f"{_toml_value(k)} = {_toml_value(v)}\n" for k,v in value.items()))
+        elif isinstance(value, list) and value and all(isinstance(x, dict) for x in value):
+            for table in value:
+                tables.append("[[" + key + "]]\n" +
+                              "".join(f"{_toml_value(k)} = {_toml_value(v)}\n" for k,v in table.items()))
+        else:
+            scalars.append(f"{key} = {_toml_value(value)}\n")
+    return "\n".join(["".join(scalars), *tables]).lstrip("\n")
 
 
 class Input:
@@ -92,76 +98,18 @@ class Input:
             return tomllib.load(f)
 
     def write(self, fout="temp.in", overwrite=False):
-
-        # do not overwrite
         if os.path.exists(fout) and not overwrite:
-            info(f"  input exists, skipping write{fout}")
+            info(f"  input exists, skipping write {fout}")
             return
-
-        with open(fout, "w") as f:
-            for item in self.input_dict.items():
-
-                # if list (eg [[species]]), loop
-                if type(item[1]) is list:
-                    for nest in item[1]:
-                        print(f"\n[[{item[0]}]]", file=f)
-                        longest_key = max(nest.keys(), key=len)
-                        N_space = len(longest_key)
-                        for pair in nest.items():
-                            s = "  {:%i}  =  {}" % N_space
-                            writeLine(s,pair,f)
-                    continue
-
-                # if not list and not dict, write elements (headerless like 'debug')
-                if type(item[1]) is not dict:
-                    s = "  %s = %s "
-                    writeLine(s,item,f)
-                    continue
-
-                # if dict, write the header, then write elements
-                header, nest = item
-                print("\n[%s]" % header, file=f)
-
-                longest_key = max(nest.keys(), key=len)
-                N_space = len(longest_key)
-                for pair in nest.items():
-                    s = "  {:%i}  =  {}" % N_space
-                    writeLine(s,pair,f)
-
+        text = _toml_text(self.input_dict)
+        with _atomic_output(fout) as tmp:
+            tmp.write_text(text, encoding="utf-8")
         info(f"  wrote input: {fout}")
 
     def pretty_print(self, entry=""):
-        """
-        dumps out current input data, in GX input format
-        if entry, where entry is one of the GX input headers
-        only print the inputs nested under entry
-        """
-
-        for item in self.inputs.items():
-            # a catch for the debug input, which has no header
-            if type(item[1]) is not dict:
-                if entry == "":
-                    print("  %s = %s " % item)
-                    continue
-
-                header, nest = item
-
-                # special case
-                if entry != "":
-                    header = entry
-                    nest = self.inputs[entry]
-
-                print("\n[%s]" % header)
-
-                longest_key = max(nest.keys(), key=len)
-                N_space = len(longest_key)
-                for pair in nest.items():
-                    s = "  {:%i}  =  {}" % N_space
-                    print(s.format(*pair))
-
-                # special case
-                if entry != "":
-                    break
+        """Print the current input or a single named entry as valid TOML."""
+        data = self.input_dict if not entry else {entry: self.input_dict[entry]}
+        print(_toml_text(data), end="")
 
 
 class Logger:
@@ -231,6 +179,9 @@ class Logger:
         tags = log['species_tags']
         if len(tags) != len(set(tags)) or 'i' in tags:
             raise ValueError("Diagnostic species tags must be unique; 'i' is reserved for the ion sum.")
+        compounds = [f'{label}_{tag}' for label in log['flux_model_labels'] for tag in tags]
+        if len(compounds) != len(set(compounds)) or any(key in tags for key in compounds):
+            raise ValueError("Output names from flux labels and species tags collide.")
         particles = dict.fromkeys(key for s in species.get_species_list() for key in s.Sn_labeled)
         powers = dict.fromkeys(key for s in species.get_species_list() for key in s.Sp_labeled)
         models = tuple(source_models.get_sources_list()) if source_models is not None else ()
@@ -305,11 +256,11 @@ class Logger:
         self.log['grid_obj'] = grid
 
         geo_settings = {}
-        geo_settings['area'] = geo.area.profile
-        geo_settings['grho'] = geo.grho.profile
-        geo_settings['area_grid'] = geo.area_grid.profile
-        geo_settings['grho_grid'] = geo.grho_grid.profile
-        geo_settings['G_fac'] = geo.G_fac.profile
+        geo_settings['area'] = geo.area.profile.copy()
+        geo_settings['grho'] = geo.grho.profile.copy()
+        geo_settings['area_grid'] = geo.area_grid.profile.copy()
+        geo_settings['grho_grid'] = geo.grho_grid.profile.copy()
+        geo_settings['G_fac'] = geo.G_fac.profile.copy()
         geo_settings['Btor'] = geo.Btor
         geo_settings['B0'] = geo.B0
         geo_settings['a_minor'] = geo.a_minor
@@ -388,6 +339,7 @@ class Logger:
             't_implicit_rms': _dict_entry(dims=('n_steps', ), description='Relative RMS time-discrete defect at the evaluated iterate, scaled by the leading time coefficient'),
             't_steady_rms': _dict_entry(dims=('n_steps', ), units='1/[t_ref]', description='Relative RMS semidiscrete transport rate at the evaluated iterate'),
             't_arrival_order': _dict_entry(data_type=np.int32, dims=('n_steps', ), description='Integrator order of the interval leading to this state: 0 if no derivative or a controller jump, 1 for first order, 2 for BDF2'),
+            't_G_fac': _dict_entry(dims=('n_steps','n_radial'), units='-', description='Geometry factor on the recorded profile grid'),
             't_geometry_file': _dict_entry(data_type=str, dims=('n_steps', ), description='Equilibrium file for each recorded state'),
             't_diagnostics_valid': _dict_entry(data_type=np.int32, dims=('n_steps', ), description='1 if flux and source diagnostics were evaluated at the recorded profiles; 0 if unavailable')
         }
@@ -444,9 +396,9 @@ class Logger:
                 self.species_dict['heat_'+tag2] = _dict_entry(dims=_dims, units='[GB]', description=f'GyroBohm-normalized {s} collisional heating profile from {label} on midpoints grid')
         # Gradients
         for s, tag in zip(self.log['species_types'], self.log['species_tags']):
-            self.species_dict['aLn_'+tag] = _dict_entry(dims=_dims, units='-', description=f'Normalized {s} density gradient, a/L_n = 1/n dn/drho, on midpoints grid')
-            self.species_dict['aLp_'+tag] = _dict_entry(dims=_dims, units='-', description=f'Normalized {s} pressure gradient, a/L_p = 1/p dp/drho, on midpoints grid')
-            self.species_dict['aLT_'+tag] = _dict_entry(dims=_dims, units='-', description=f'Normalized {s} temperature gradient, a/L_T = 1/T dT/drho, on midpoints grid')
+            self.species_dict['aLn_'+tag] = _dict_entry(dims=_dims, units='-', description=f'Normalized {s} density gradient, a/L_n = -1/n dn/drho, on midpoints grid')
+            self.species_dict['aLp_'+tag] = _dict_entry(dims=_dims, units='-', description=f'Normalized {s} pressure gradient, a/L_p = -1/p dp/drho, on midpoints grid')
+            self.species_dict['aLT_'+tag] = _dict_entry(dims=_dims, units='-', description=f'Normalized {s} temperature gradient, a/L_T = -1/T dT/drho, on midpoints grid')
         # Particle source terms
         _particle_source = defaultdict(lambda: 'external', {'aux': 'auxiliary'})
         _dims = ('n_steps', 'n_radial')
@@ -572,6 +524,7 @@ class Logger:
         self.log['t_steady_rms'].append(np.nan if final else getattr(time, 'steady_rms', np.nan))
         self.log['t_arrival_order'].append(getattr(time, 'arrival_order', 0) if time.iter_idx == 0 else 0)
         self.log['t_geometry_file'].append(str(getattr(self.geo, 'geo_file', '')))
+        self.log['t_G_fac'].append(self.geo.G_fac.profile.copy())
         valid = time.diagnostics_current
         self.log['t_diagnostics_valid'].append(np.int32(valid))
 
@@ -594,7 +547,8 @@ class Logger:
         ion_particles = {label: zero for label in [*self.log['particle_source_labels'], 'tot']}
         ion_powers = {label: zero for label in [*self.log['power_source_labels'], 'tot']}
 
-        for s in species.get_species_list():
+        gradients = species.get_grads_on_flux_grid()[:3]
+        for index, s in enumerate(species.get_species_list()):
             tag = s.type_tag
             self.log['n_'+tag].append(s.n().profile.copy())
             self.log['p_'+tag].append(s.p().profile.copy())
@@ -607,10 +561,8 @@ class Logger:
                 self.log['qflux_'+label+'_'+tag].append(diagnostic(s.qflux_labeled[label] if valid else s.qflux))
                 self.log['heat_'+label+'_'+tag].append(diagnostic(s.heat_labeled[label] if valid else s.heat))
 
-            aLn, aLT, aLp = s.get_fluxgrads()
-            self.log['aLn_'+tag].append(aLn)
-            self.log['aLT_'+tag].append(aLT)
-            self.log['aLp_'+tag].append(aLp)
+            for name, values in zip(('aLn', 'aLT', 'aLp'), gradients):
+                self.log[name+'_'+tag].append(values[index].copy())
 
             # Source totals use the same evolved shells as the transport equations.
             particle_source_labels = self.log['particle_source_labels']

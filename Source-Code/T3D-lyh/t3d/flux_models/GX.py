@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.integrate import trapezoid
+from scipy.interpolate import griddata
+from scipy.spatial import QhullError
 import subprocess
 from datetime import datetime
 import time as _time
@@ -11,10 +13,49 @@ import sys
 from t3d.FluxModels import FluxModel
 from netCDF4 import Dataset
 import math
+import json
+from datetime import date, time
+
+try:
+    import tomllib
+except ImportError:  # Python 3.10
+    import tomli as tomllib
 from t3d.Logbook import logbook
 from t3d.flux_models._external import (
     cancel_jobs, command_prefix, run_workspace, start_job, trial_tag, valid_output,
 )
+
+def _checked_gx_array(data, name):
+    values = np.ma.asarray(data, dtype=float)
+    if not values.size or np.any(np.ma.getmaskarray(values)) or not np.all(np.isfinite(values)):
+        raise ValueError(f"GX {name} requires nonempty, finite, unmasked data")
+    return np.asarray(values)
+
+
+def _gx_periodic_surface_average(zeta, theta, weight, weighted_flux, nfp):
+    """Integrate the existing GX surface diagnostic on a periodic tile."""
+    zeta_period = 2*np.pi/nfp
+    grid_z, grid_t = np.mgrid[-zeta_period/2:zeta_period/2:100j, -np.pi:np.pi:100j]
+    # Neighbor tiles supply the real data across each periodic seam. A
+    # nonzero fill for uncovered cells would create flux from a zero field.
+    shifts = [(i*zeta_period, j*2*np.pi) for i in (-1,0,1) for j in (-1,0,1)]
+    x = np.concatenate([zeta+dz for dz, _ in shifts])
+    y = np.concatenate([theta+dt for _, dt in shifts])
+
+    def integral(values):
+        try:
+            image = griddata((x,y), np.tile(values, len(shifts)), (grid_z,grid_t), method="cubic")
+        except QhullError as exc:
+            raise ValueError("GX field lines do not span a surface for theta_zeta_fluxes") from exc
+        if not np.all(np.isfinite(image)):
+            raise ValueError("GX theta_zeta_fluxes cannot interpolate the full periodic surface")
+        return trapezoid(trapezoid(image, grid_t[0,:], axis=1), grid_z[:,0])
+
+    denominator = integral(weight)
+    if not np.isfinite(denominator) or denominator <= 0:
+        raise ValueError("GX theta_zeta_fluxes has invalid integrated geometry weight")
+    return [integral(flux)/denominator for flux in weighted_flux]
+
 
 def map_to_periodic_range(arr, low_bound, high_bound):
     range_size = high_bound - low_bound
@@ -419,118 +460,52 @@ class GX_FluxModel(FluxModel):
             raise RuntimeError(f"{self.label} did not produce complete output: {', '.join(unready)}")
 
     def read_input(self, fin):
-
-        with open(fin) as f:
-            data = f.readlines()
-
-        obj = {}
-        header = ''
-        for line in data:
-
-            # strip comments
-            if line.find('#') > -1:
-                end = line.find('#')
-                line = line[:end]
-
-            # parse headers
-            if line.find('[') == 0:
-                header = line.split('[')[1].split(']')[0]
-                obj[header] = {}
-                continue
-
-            # skip blanks
-            if line.find('=') < 0:
-                continue
-
-            # store data
-            key, value = line.split('=')
-            key = key.strip()
-            value = value.strip()
-
-            if header == '':
-                obj[key] = value
-            else:
-                obj[header][key] = value
-
-        # check for all possible header types in GX input file,
-        # and initialize empty if not found
-        try:
-            obj['Dimensions']
-        except:
-            obj['Dimensions'] = {}
-        try:
-            obj['Domain']
-        except:
-            obj['Domain'] = {}
-        try:
-            obj['Time']
-        except:
-            obj['Time'] = {}
-        try:
-            obj['Initialization']
-        except:
-            obj['Initialization'] = {}
-        try:
-            obj['Restart']
-        except:
-            obj['Restart'] = {}
-        try:
-            obj['Dissipation']
-        except:
-            obj['Dissipation'] = {}
-        try:
-            obj['Diagnostics']
-        except:
-            obj['Diagnostics'] = {}
-        try:
-            obj['Geometry']
-        except:
-            obj['Geometry'] = {}
-        try:
-            obj['Physics']
-        except:
-            obj['Physics'] = {}
-        try:
-            obj['species']
-        except:
-            obj['species'] = {}
-        try:
-            obj['Boltzmann']
-        except:
-            obj['Boltzmann'] = {}
-
-        self.inputs = obj
+        with open(fin, 'rb') as f:
+            self.inputs = tomllib.load(f)
+        for name in ('Dimensions', 'Domain', 'Time', 'Initialization',
+                     'Restart', 'Dissipation', 'Diagnostics', 'Geometry',
+                     'Physics', 'species', 'Boltzmann'):
+            if not isinstance(self.inputs.setdefault(name, {}), dict):
+                raise ValueError(f"GX template [{name}] must be a TOML table")
         self.filename = fin
 
     def write_input(self, fout='temp.in', inputs=None):
-
         if inputs is None:
             inputs = self.inputs
-        # Render numpy scalars as ordinary numbers without changing the
-        # interpreter's global print options.
-        def plain(value):
-            if isinstance(value, np.generic):
-                return value.item()
-            if isinstance(value, (list, tuple)):
-                return [plain(x) for x in value]
-            return value
+
+        def quote(key):
+            return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else json.dumps(key, ensure_ascii=False).replace(chr(127), r"\u007f")
+
+        def value(v):
+            if isinstance(v, np.generic):
+                v = v.item()
+            if isinstance(v, bool):
+                return str(v).lower()
+            if isinstance(v, str):
+                return json.dumps(v, ensure_ascii=False).replace(chr(127), r"\u007f")
+            if isinstance(v, (int, float)):
+                return repr(v)
+            if isinstance(v, (date, time)):
+                return v.isoformat()
+            if isinstance(v, (list, tuple)):
+                return '[' + ', '.join(value(x) for x in v) + ']'
+            if isinstance(v, dict):
+                return '{' + ', '.join(f"{quote(k)} = {value(x)}" for k, x in v.items()) + '}'
+            raise TypeError(f"Unsupported GX TOML value: {v!r}")
+
+        def write_table(f, table, prefix=()):
+            # Emit scalar keys first so they are not assigned to the previous table.
+            for key, v in table.items():
+                if not isinstance(v, dict):
+                    print(f"{quote(key)} = {value(v)}", file=f)
+            for key, v in table.items():
+                if isinstance(v, dict):
+                    path = (*prefix, quote(key))
+                    print('\n[' + '.'.join(path) + ']', file=f)
+                    write_table(f, v, path)
 
         with open(fout, 'x') as f:
-            for item in inputs.items():
-
-                if (type(item[1]) is not dict):
-                    print('  %s = %s ' % item, file=f)
-                    continue
-
-                header, nest = item
-                print('\n[%s]' % header, file=f)
-
-                longest_key = max(nest.keys(), key=len, default='')
-                N_space = len(longest_key)
-                for pair in nest.items():
-                    s = '  {:%i}  =  {}' % N_space
-                    print(s.format(pair[0], plain(pair[1])), file=f)
-
+            write_table(f, inputs)
         self.info(f'  wrote input: {fout}')
 
     # run a GX flux tube calculation at each radius, given gradient values kns and kts
@@ -575,36 +550,35 @@ class GX_FluxModel(FluxModel):
                 f_load = previous_stem + ".restart.nc" if previous_stem is not None else None
 
                 if geo.geo_option == 'vmec':
-                    gx_inputs['Geometry']['geo_option'] = "'vmec'"
+                    gx_inputs['Geometry']['geo_option'] = "vmec"
                     gx_inputs['Geometry']['desired_normalized_toroidal_flux'] = rho[r_id]**2
                     gx_inputs['Geometry']['zeta_center'] = zeta
-                    gx_inputs['Geometry']['vmec_file'] = f"'{geo.geo_file}'"
+                    gx_inputs['Geometry']['vmec_file'] = str(geo.geo_file)
                 elif geo.geo_option == 'desc' and str(geo.geo_file).endswith('.nc'):
                     # A DESC-exported wout is a VMEC-format file, not native DESC HDF5.
-                    gx_inputs['Geometry']['geo_option'] = "'vmec'"
+                    gx_inputs['Geometry']['geo_option'] = "vmec"
                     gx_inputs['Geometry']['desired_normalized_toroidal_flux'] = rho[r_id]**2
-                    gx_inputs['Geometry']['vmec_file'] = f"'{geo.geo_file}'"
+                    gx_inputs['Geometry']['vmec_file'] = str(geo.geo_file)
                     gx_inputs['Geometry']['zeta_center'] = zeta
                 elif geo.geo_option == 'desc':
-                    gx_inputs['Geometry']['geo_option'] = "'desc'"
-                    gx_inputs['Geometry']['geo_file'] = f"'{geo.geo_file}'"
+                    gx_inputs['Geometry']['geo_option'] = "desc"
+                    gx_inputs['Geometry']['geo_file'] = str(geo.geo_file)
                     gx_inputs['Geometry']['rhotor'] = rho[r_id]
                     gx_inputs['Geometry']['zeta_center'] = zeta
                 elif geo.geo_option == 'geqdsk':
-                    gx_inputs['Geometry']['geo_option'] = "'gs2_geo'"
+                    gx_inputs['Geometry']['geo_option'] = "gs2_geo"
                     gx_inputs['Geometry']['rhoc'] = rho[r_id]
                     gx_inputs['Geometry']['iflux'] = 1
                     gx_inputs['Geometry']['bishop'] = 1
-                    gx_inputs['Geometry']['equal_arc'] = "true"
-                    gx_inputs['Geometry']['efit_eq'] = "true"
-                    gx_inputs['Geometry']['eqfile'] = f"'{geo.geo_file}'"
+                    gx_inputs['Geometry']['equal_arc'] = True
+                    gx_inputs['Geometry']['efit_eq'] = True
+                    gx_inputs['Geometry']['eqfile'] = str(geo.geo_file)
                     if self.grid.flux_label == 'torflux':
                         gx_inputs['Geometry']['irho'] = 1
                     elif self.grid.flux_label == 'rminor':
                         gx_inputs['Geometry']['irho'] = 2
-                    gx_inputs['Geometry']['eqfile'] = f"'{geo.geo_file}'"
                 elif geo.geo_option == 'miller':
-                    gx_inputs['Geometry']['geo_option'] = "'miller'"
+                    gx_inputs['Geometry']['geo_option'] = "miller"
                     gx_inputs['Geometry']['rhoc'] = rho[r_id]
                     gx_inputs['Geometry']['Rmaj'] = geo.AspectRatio
                     gx_inputs['Geometry']['R_geo'] = geo.rmaj[r_id]
@@ -620,7 +594,7 @@ class GX_FluxModel(FluxModel):
                 if dummy:
                     gx_inputs['Time']['nstep'] = 1
                     gx_inputs['Dimensions']['nspecies'] = 1
-                    gx_inputs['Restart']['restart'] = 'false'
+                    gx_inputs['Restart']['restart'] = False
                     gx_inputs['species']['mass'] = [1.0]
                     gx_inputs['species']['z'] = [1.0]
                     gx_inputs['species']['dens'] = [1.0]
@@ -629,7 +603,7 @@ class GX_FluxModel(FluxModel):
                     gx_inputs['species']['tprim'] = [1.0]
                     gx_inputs['species']['vnewk'] = [1.0]
                     gx_inputs['species']['type'] = ['ion']
-                    gx_inputs['Boltzmann']['add_Boltzmann_species'] = 'false'
+                    gx_inputs['Boltzmann']['add_Boltzmann_species'] = False
                 else:
                     if self.nstep_gx:
                         gx_inputs['Time']['nstep'] = self.nstep_gx
@@ -645,7 +619,7 @@ class GX_FluxModel(FluxModel):
                     else:
                         # force beta = 5e-4 to get electrostatic limit in GX to avoid omega_H mode when beta=0 (or fapar=0)
                         # keep actual beta value as comment for reference
-                        gx_inputs['Physics']['beta'] = f"5e-4  # {beta_ref[r_id]}"
+                        gx_inputs['Physics']['beta'] = 5e-4
 
                     # set species parameters (these are lists)
                     gx_inputs['species']['mass'] = list(species.get_masses(normalize=True)[kinetic])
@@ -658,11 +632,11 @@ class GX_FluxModel(FluxModel):
                     gx_inputs['species']['type'] = list(np.asarray(species.get_types_ion_electron())[kinetic])
 
                     if self.adiabatic_species is not None:
-                        gx_inputs['Boltzmann']['add_Boltzmann_species'] = 'true'
+                        gx_inputs['Boltzmann']['add_Boltzmann_species'] = True
                         gx_inputs['Boltzmann']['tau_fac'] = tau_fac[r_id]
-                        gx_inputs['Boltzmann']['Boltzmann_type'] = f"'{adiab_type}'"
+                        gx_inputs['Boltzmann']['Boltzmann_type'] = adiab_type
                     else:
-                        gx_inputs['Boltzmann']['add_Boltzmann_species'] = 'false'
+                        gx_inputs['Boltzmann']['add_Boltzmann_species'] = False
 
                     restart = (not self.no_restarts
                                and getattr(self.time, 'retry_generation', 0) == 0
@@ -671,12 +645,12 @@ class GX_FluxModel(FluxModel):
                                and f_load is not None and valid_output(f_load)
                                and np.all(np.isfinite(self.qflux_prev[:, r_id]))
                                and np.any(np.abs(self.qflux_prev[:, r_id]) >= 1e-10))
-                    gx_inputs['Restart']['restart'] = 'true' if restart else 'false'
+                    gx_inputs['Restart']['restart'] = True if restart else False
                     if restart:
-                        gx_inputs['Restart']['restart_from_file'] = f'"{f_load}"'
+                        gx_inputs['Restart']['restart_from_file'] = f_load
 
                     # save restart file (always)
-                    gx_inputs['Restart']['save_for_restart'] = 'true'
+                    gx_inputs['Restart']['save_for_restart'] = True
 
                 # execute
                 self.write_input(os.path.join(path, fout), gx_inputs)
@@ -729,6 +703,9 @@ class GX_FluxModel(FluxModel):
     def read_gx_fluxes(self, out_j, species_list):
 
         species_list = list(species_list)
+        theta_zeta = self.theta_zeta_fluxes
+        if theta_zeta and np.unique(self.zeta_centers).size < 2:
+            raise ValueError("GX theta_zeta_fluxes requires multiple field lines")
         if len(out_j) != self.N_fluxtubes*len(self.zeta_centers):
             raise ValueError("GX requires one output for every radius and angle")
         pflux = np.zeros((len(species_list), self.N_fluxtubes))
@@ -738,7 +715,7 @@ class GX_FluxModel(FluxModel):
         out_id = 0
         for r_id in np.arange(self.N_fluxtubes):
             # fluxes will be summed over all field lines
-            if self.theta_zeta_fluxes:
+            if theta_zeta:
                 pflux_sz = None
                 qflux_sz = None
                 heat_sz = None
@@ -750,16 +727,22 @@ class GX_FluxModel(FluxModel):
                 self.info(f'  read_gx_fluxes: reading output for {out}')
                 with self._open_gx_output(out) as f:
                     new_gx_diag = 'Diagnostics' in f.groups
-                    if self.theta_zeta_fluxes:
+                    if theta_zeta:
                         if not new_gx_diag:
                             raise ValueError("GX theta_zeta_fluxes requires current diagnostics")
-                        scale = f.groups['Geometry'].variables['theta_scale'][:]
-                        theta = f.groups['Grids'].variables['theta'][:]*scale
+                        geometry = f.groups['Geometry'].variables
+                        scale = _checked_gx_array(geometry['theta_scale'][:], "theta_scale").item()
+                        theta = _checked_gx_array(f.groups['Grids'].variables['theta'][:], "theta")*scale
                         nz = len(theta)
 
-                        iota = 1/f.groups['Geometry'].variables['q'][:]
-                        nfp = f.groups['Geometry'].variables['nfp'][:]
-                        zeta_center = f.groups['Geometry'].variables['zeta_center'][:]
+                        q = _checked_gx_array(geometry['q'][:], "q").item()
+                        nfp_out = _checked_gx_array(geometry['nfp'][:], "nfp").item()
+                        zeta_center = _checked_gx_array(geometry['zeta_center'][:], "zeta_center").item()
+                        if q == 0 or nfp_out <= 0 or nfp_out != int(nfp_out):
+                            raise ValueError("Invalid GX magnetic geometry for theta_zeta_fluxes")
+                        if a_id > 0 and nfp_out != nfp:
+                            raise ValueError("GX field lines have inconsistent field periods")
+                        nfp, iota = nfp_out, 1/q
                         alpha = -iota*zeta_center
                         zeta = (theta - alpha)/iota
 
@@ -772,8 +755,8 @@ class GX_FluxModel(FluxModel):
                         theta_z[a_id*nz:(a_id+1)*nz] = theta_p
                         zeta_z[a_id*nz:(a_id+1)*nz] = zeta_p
 
-                        jacobian = f.groups['Geometry'].variables['jacobian'][:]
-                        grho = f.groups['Geometry'].variables['grho'][:]
+                        jacobian = _checked_gx_array(geometry['jacobian'][:], "jacobian")
+                        grho = _checked_gx_array(geometry['grho'][:], "grho")
                         fluxDenom = np.sum(jacobian*grho)
                         grho_z[a_id*nz:(a_id+1)*nz] = jacobian*grho
 
@@ -784,10 +767,10 @@ class GX_FluxModel(FluxModel):
                             pflux[i, r_id] = 0.0
                             qflux[i, r_id] = 0.0
                         else:
-                            if self.theta_zeta_fluxes:
+                            if theta_zeta:
                                 assert new_gx_diag, 'theta_zeta_fluxes require new gx diagnostics'
 
-                                pflux_zt = f.groups['Diagnostics'].variables['ParticleFlux_zst'][:,is_gx,:]
+                                pflux_zt = _checked_gx_array(f.groups['Diagnostics'].variables['ParticleFlux_zst'][:,is_gx,:], 'ParticleFlux_zst')
                                 pflux_z = np.mean(pflux_zt[int(len(pflux_zt[:,0])/2):,:], axis=0)*fluxDenom
                                 if pflux_sz is None:
                                     pflux_sz = np.zeros((len(species_list), nz*len(self.zeta_centers)))
@@ -799,8 +782,8 @@ class GX_FluxModel(FluxModel):
                                     pflux_t = f.groups['Fluxes'].variables['pflux'][:,is_gx]
                                 pflux[i, r_id] += self.median_estimator(pflux_t)
 
-                            if self.theta_zeta_fluxes:
-                                qflux_zt = f.groups['Diagnostics'].variables['HeatFlux_zst'][:,is_gx,:]
+                            if theta_zeta:
+                                qflux_zt = _checked_gx_array(f.groups['Diagnostics'].variables['HeatFlux_zst'][:,is_gx,:], 'HeatFlux_zst')
                                 qflux_z = np.mean(qflux_zt[int(len(qflux_zt[:,0])/2):,:], axis=0)*fluxDenom
                                 if qflux_sz is None:
                                     qflux_sz = np.zeros((len(species_list), nz*len(self.zeta_centers)))
@@ -812,8 +795,8 @@ class GX_FluxModel(FluxModel):
                                     qflux_t = f.groups['Fluxes'].variables['qflux'][:,is_gx]
                                 qflux[i, r_id] += self.median_estimator(qflux_t)
 
-                            if self.theta_zeta_fluxes:
-                                heat_zt = f.groups['Diagnostics'].variables['TurbulentHeating_zst'][:,is_gx,:]
+                            if theta_zeta:
+                                heat_zt = _checked_gx_array(f.groups['Diagnostics'].variables['TurbulentHeating_zst'][:,is_gx,:], 'TurbulentHeating_zst')
                                 heat_z = np.mean(heat_zt[int(len(heat_zt[:,0])/2):,:], axis=0)*fluxDenom
                                 if heat_sz is None:
                                     heat_sz = np.zeros((len(species_list), nz*len(self.zeta_centers)))
@@ -825,24 +808,18 @@ class GX_FluxModel(FluxModel):
                             is_gx += 1
                 out_id += 1
             # end zeta_center loop
-            if self.theta_zeta_fluxes:
-                from scipy.interpolate import griddata
-                grid_zeta, grid_theta = np.mgrid[-np.pi/nfp:np.pi/nfp:100j, -np.pi:np.pi:100j]
-                interp_grho = griddata((zeta_z, theta_z), grho_z, (grid_zeta, grid_theta), method='cubic', fill_value=1e-10)
-                integrated_grho = trapezoid(trapezoid(interp_grho, grid_theta[0,:], axis=1), grid_zeta[:,0])
+            if theta_zeta:
+                integrated = _gx_periodic_surface_average(
+                    zeta_z, theta_z, grho_z,
+                    [v[i,:] for i, s in enumerate(species_list) if s.type != self.adiabatic_species
+                     for v in (pflux_sz, qflux_sz, heat_sz)], nfp)
+                it = iter(integrated)
                 for i, s in enumerate(species_list):
-                    if s.type == self.adiabatic_species:
-                        continue
-                    interp_pflux = griddata((zeta_z, theta_z), pflux_sz[i,:], (grid_zeta, grid_theta), method='cubic', fill_value=1e-10)
-                    interp_qflux = griddata((zeta_z, theta_z), qflux_sz[i,:], (grid_zeta, grid_theta), method='cubic', fill_value=1e-10)
-                    interp_heat = griddata((zeta_z, theta_z), heat_sz[i,:], (grid_zeta, grid_theta), method='cubic', fill_value=1e-10)
-
-                    pflux[i, r_id] = trapezoid(trapezoid(interp_pflux, grid_theta[0,:], axis=1), grid_zeta[:,0])/integrated_grho
-                    qflux[i, r_id] = trapezoid(trapezoid(interp_qflux, grid_theta[0,:], axis=1), grid_zeta[:,0])/integrated_grho
-                    heat[i, r_id] = trapezoid(trapezoid(interp_heat, grid_theta[0,:], axis=1), grid_zeta[:,0])/integrated_grho
+                    if s.type != self.adiabatic_species:
+                        pflux[i,r_id], qflux[i,r_id], heat[i,r_id] = next(it), next(it), next(it)
         # end radius loop
 
-        if not self.theta_zeta_fluxes:
+        if not theta_zeta:
             # average fluxes over all field lines (already summed via += above)
             qflux = qflux/len(self.zeta_centers)
             pflux = pflux/len(self.zeta_centers)

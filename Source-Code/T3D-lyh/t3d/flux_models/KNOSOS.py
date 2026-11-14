@@ -281,33 +281,28 @@ class KNOSOS_FluxModel(FluxModel):
         pflux = np.zeros((species.N_species, self.N_fluxtubes))
         qflux = np.zeros((species.N_species, self.N_fluxtubes))
 
-        for r_id in np.arange(self.N_fluxtubes):
-            out = outs_j[r_id]
-
-            with open(out, 'r') as f:
-                f.readline()  # skip header
-                data = list(map(float,f.readline().split()))
-                try:
-                    if not np.all(np.isfinite(data)):
-                        raise ValueError("nonfinite flux")
-                    Q_i = data[2]
-                    Q_e = data[3]
-                    if species.N_species > 2:
-                        Q_Z = data[5:species.N_species+2]
-                    Gam_i = data[species.N_species+2]
-                    Gam_e = data[species.N_species+3]
-                    if species.N_species > 2:
-                        Gam_Z = data[species.N_species+4:]
-
-                    for i, s in enumerate(species.get_species_list()):
-                        if s.type == species.bulk_ion.type:
-                            qflux[i, r_id] = Q_i  # W/m^2
-                            pflux[i, r_id] = Gam_i  # 1/(m^2 s)
-                        elif s.type == "electron":
-                            qflux[i, r_id] = Q_e  # W/m^2
-                            pflux[i, r_id] = Gam_e  # 1/(m^2 s)
-                except (IndexError, ValueError) as exc:
-                    raise RuntimeError(f"Invalid KNOSOS flux record at r_id={r_id}: {out}") from exc
+        if len(outs_j) != self.N_fluxtubes:
+            raise ValueError("KNOSOS requires one output per transport face")
+        # KNOSOS puts the bulk ion first in predictive output, although
+        # input.species lists the electron first (amb_and_qn.f90).
+        solver_order = [species.bulk_ion.type, "electron", *species.other_ions_dict]
+        order = [solver_order.index(s.type) for s in species.get_species_list()]
+        n_species = species.N_species
+        unused_faces = set(range(self.N_fluxtubes))
+        for out in outs_j:
+            with open(out) as f:
+                next(f, None)  # header
+                rows = [line.split() for line in f if line.strip()]
+            if len(rows) != 1 or len(rows[0]) != 2 + 2*n_species:
+                raise ValueError(f"Expected one KNOSOS predictive record with {2 + 2*n_species} columns: {out}")
+            data = np.array([float(x.replace("D", "E").replace("d", "e")) for x in rows[0]])
+            faces = [i for i in unused_faces if np.isclose(data[0], self.rho[i], rtol=6e-6, atol=1e-8)]
+            if not np.all(np.isfinite(data)) or len(faces) != 1:
+                raise ValueError(f"Invalid KNOSOS predictive data or radius: {out}")
+            r_id = faces[0]
+            unused_faces.remove(r_id)
+            qflux[:, r_id] = data[2:2+n_species][order]
+            pflux[:, r_id] = data[2+n_species:][order]
 
         # KNOSOS fluxes are in SI units. need to normalize to gyroBohm
         for i, s in enumerate(species.get_species_list()):

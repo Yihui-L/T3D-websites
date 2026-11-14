@@ -30,6 +30,8 @@ TRINITY3D · 一维径向输运
 - **离散边界与终止：** 固定边界作为代数约束而非 BDF 外推；遇 stop 文件回滚未接受试探步；零时长或无演化变量时只写诊断，不强行推进。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/trinity_lib.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py)
 - **径向网格与紧致梯度：** 修复三点网格的节点／界面插值和边界导数。紧致差分用等价带状求解；保留浮点精度并拒绝非法网格、剖面和零差分步。未测量加速比。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Profiles.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numerics_round3.py)
 - **准中性与组分约束：** 一致处理从属物种、关联密度和温度剖面；支持显式选定准中性从属组分，拒绝重复组分、冲突约束和非正／非有限的密度或压强试探态。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_species.py)
+- **磁面准中性：** 密度插值发生正值回退时，各物种改用同一线性模板；同步约束基础和扰动的电荷梯度，输运模型、Jacobian 和输出使用同一套面梯度。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numeric_constraints.py)
+- **剖面算术与 RMS：** 剖面持有自己的数据，拒绝同长度但不同坐标的混算；Newton 的缩放 RMS 在极大、极小和空状态下不会意外溢出、下溢或崩溃。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Profiles.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_numeric_constraints.py)
 
 <a name="geometry"></a>
 
@@ -40,6 +42,8 @@ TRINITY3D · 一维径向输运
 - **基本几何与重标度：** 圆形基本几何的 A/a² 和 a|∇ρ| 使用一致无量纲定义，修正磁场默认与 VMEC LCFS 回退；径向线平均不再带长度单位，非法度量明确报错。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py)
 - **GEQDSK／Miller：** 由实际能力选取唯一 GX 或 GS2-QL 几何提供者，不依赖自定义标签；GEQDSK 用 rminor 网格，逐面读入几何。Miller 必须启用兼容的导入，Boozer 预处理按后端能力执行。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_gs2_ql_geometry_and_metric.py)
 - **DESC 平衡反馈：** 在导入 JAX 后端前选定 CPU／GPU；压强增减均可触发，分开保存候选平衡，仅接受收敛结果；按需要输出 VMEC 格式。当前只接受不改变演化壳层体积／参考小半径的更新；没有移动磁面输运或压缩功。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/geometry_models/DESC.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_geometry_balance_interfaces.py)
+- **DESC 体积权重与 VMEC 输入：** DESC 直接插值原生 dV/dρ，再用面积一致地构造度量，明确要求 ρ=√s。VMEC 拒绝掩蔽输入并确保读取失败时关闭 NetCDF。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py)
+- **几何积分与逐帧输出：** 修复节点和输运面的插值体积积分，逐帧保存度量；功率分解按所选帧取几何。Miller 重启只导入物理几何，不继承旧运行的模型和目录。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Geometry.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py)
 
 <a name="physics"></a>
 
@@ -53,6 +57,9 @@ TRINITY3D · 一维径向输运
 - **Sudo 与外侧边界：** 在初始化及已接受步之间应用密度反馈，单次通量、源项和残差计算使用同一个剖面。边界控制保持固定量、关联温度和准中性；发生跳变后下一步从一阶重启。Sudo 是经验反馈，不是额外演化方程。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/trinity_lib.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py)
 - **PowerBalance：** 独立的源平衡通量闭合在所有源项收集后计算，不能作为额外通量叠加到其他闭合。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/PowerBalance.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_geometry_balance_interfaces.py)
 - **BEAMS3D：** 改用完整碰撞追踪；输入按 s、eV、m⁻³、kg 写入，输出用 √s 径向箱并汇总束线。修正 Fortran 起始下标、稀疏束线与同位素检查，分别控制粒子和能量源；可选独立 n,p 差分导数需要低标记噪声。目前离子沉积映射到主离子。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/source_models/BEAMS3D.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_beams3d_model.py)
+- **剖面依赖与中性根：** 按依赖顺序处理 init_to / equal_to；若约束本身已使电荷恒为零，保留独立演化根；若单一密度根的比例与准中性冲突，给出明确错误。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Species.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_physics_round4.py)
+- **初始化与源项防护：** 自定义剖面组合平均值和边界值时保持固定边界；拒绝无物理意义的 Zeff 和非有限源项，清理外部源标签并校验 Q 控制范围。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Physics.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_physics_round4.py)
+- **BEAMS3D 一致性：** 不把仅在 T3D 中重标度的几何默认为真实束注入几何；新调用清除上一份输出，无独立未知量时不构造空 Jacobian。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/source_models/BEAMS3D.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_beams3d_model.py)
 
 <a name="closures"></a>
 
@@ -66,6 +73,9 @@ TRINITY3D · 一维径向输运
 - **GS2／NEO／KNOSOS 作业：** 用有界 CPU 调度和退出状态代替背景 shell 猜测；NEO 的输入解析器成功后才求解，KNOSOS 的径向输出必须齐全。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/_external.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_transport_jobs.py)
 - **GX GPU 与 MPI 调度：** 本机按设备分组、每个任务按 GPU 数申请 MPI 秩；修正 Polaris 三卡分配，支持 Slurm／自定义启动器限流和可选的无进展报错。调度测试未用真实 GPU 或 Slurm。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/GX.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_transport_jobs.py)
 - **拒步、缓存与失败清理：** 每次运行使用独立目录，步／迭代／拒步重试有独立标识；检查子进程退出和全部预期输出，终止仍在运行的兄弟作业。GX 仅把已成功并与同一几何匹配的检查点作热启动，不复用旧通量。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/trinity_lib.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_transport_jobs.py)
+- **GX 模板与 SFINCS 归一化：** GX 以 TOML 解析含引号、缩进和标点的模板；SFINCS 保留物理电荷符号，并与输运面使用的参考速度和通量单位一致。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/SFINCS.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_flux_formats.py)
+- **NEO 与 KNOSOS 通量读回：** NEO 核对物种、径向输出形状和归一化；KNOSOS 按预测输出约定读取主离子、电子及杂质通量，检查半径和列数。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/KNOSOS.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_flux_formats.py)
+- **GX θ–ζ 图：** 拒绝掩蔽或非有限样本；仅对采样覆盖的区域插值，不把未覆盖区域推断为微小非零通量。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/GX.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_external_flux_formats.py)
 
 <a name="io"></a>
 
@@ -76,6 +86,9 @@ TRINITY3D · 一维径向输运
 - **检查点与输出路径：** 每 N 个接受步写检查点，NPY 和 NetCDF 写完才替换上一份，BP 单独路径；各格式不会共用同一个文件名。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py)
 - **诊断对齐与单位：** 修正逐物种和离子汇总、粒子量和积分单位，分开输出 α 出生与沉积功率；记录几何文件、时间推进阶数、残差与诊断有效性。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py)
 - **末帧与后处理：** 内部闭合在最终剖面重算；外部闭合如未同步则明确标 NaN，不为日志隐式启动求解。功率图按所选帧取通量，用已接受状态和已知阶数算时间导数，不猜旧文件的推进阶数。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/tools/source_sink_plot.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py)
+- **TOML 写回与运行入口：** 字符串、嵌套表和数组可写回并重新读入。源码快照可用 python -m t3d 启动；输入扩展名错误返回非零且不创建输出日志。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py)
+- **TRANSP / JETTO 导入：** TRANSP 用质量和电荷辨认离子，不用电子密度补缺；处理单字符串与多源通道，校验径向网格和单位。JETTO 缺测值不再被当作物理数据。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py)
+- **模型标签与失败诊断：** 单表和数组语法用同一诊断标签和计数，检查复合变量名碰撞；计算失败后不保留上一帧的有效诊断标记。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/FluxModels.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_iterative_io.py)
 
 <a name="w7x"></a>
 
@@ -94,7 +107,7 @@ TRINITY3D · 一维径向输运
 
 - 终态离子温度最大差 16.57 eV（最内点）。固定密度、电子温度和外侧离子温度一致。净离子热源来自规定电子剖面的碰撞能量交换。
 - 残差为 `|dWi/dt − (Psource − Qout)|`。差异主要来自近轴体积权重和内部共享通量，其次有时间步轨迹和 Newton 收敛误差。结果不等价于实验预测精度提高。
-- 整套远程测试 134 通过、4 跳过。真实 SFINCS 验证了 W7-X 单磁面、单 MPI 秩的启动、读回与归一化；之前也有四磁面和一组梯度扰动的粗分辨率测试。DESC 的已验证范围是 CPU 小平衡重求解，不是完整耦合输运。
+- 整套远程测试 179 通过、4 跳过。最终一轮复查未发现新的可复现缺陷。SFINCS 在两处 W7-X 磁面上进行单进程 CPU 冒烟测试；DESC 通过固定平衡 ReLU 输运，未验证完整移动磁面耦合。动理学电子 W7-X ReLU 变体 7 步到终点并逐点满足准中性。
 - GX、GS2、BEAMS3D、KNOSOS、NEO、GPU/Slurm 和 ADIOS2 未完成真实运行验证；相应测试限于接口、合成数据或模拟调度。并行扩展性和移动磁面输运不在已验证范围内。
 
 <a name="reproduce"></a>

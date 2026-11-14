@@ -19,7 +19,7 @@ class Profile():
             return np.full(size, values, dtype=float)
         if values.shape != (size,):
             raise ValueError(f"Expected {size} radial values, got shape {values.shape}")
-        return values
+        return values.copy()
 
     def __init__(self, arr, grid):
 
@@ -49,64 +49,57 @@ class Profile():
 
     __array_ufunc__ = None
 
-    # operator overloads that automatically dereference the profiles
-    def __add__(A, B):
-        if isinstance(B, A.__class__):
-            return A.__class__(A.profile + B.profile, A.grid)
-        elif isinstance(B, (list, tuple, np.ndarray)) and len(B) == len(A.profile) or not hasattr(B, '__len__'):
-            return A.__class__(A.profile + B, A.grid)
-        else:
-            raise Exception("Type mismatch in Profile.__add__")
+    # Operators on profiles are pointwise and require the same radial grid.
+    def _operand(self, other):
+        if isinstance(other, Profile):
+            if not self._same_grid(other):
+                raise ValueError("Cannot combine profiles on different radial grids")
+            return other.profile
+        array = np.asarray(other)
+        if array.ndim == 0 or array.shape == self.profile.shape:
+            return array
+        raise ValueError(f"Operand shape {array.shape} does not match radial shape {self.profile.shape}")
 
-    def __radd__(A, B):
-        return A.__add__(B)
+    def _same_grid(self, other):
+        return (type(self) is type(other)
+                and getattr(getattr(self, "grid", None), "flux_label", None)
+                == getattr(getattr(other, "grid", None), "flux_label", None)
+                and np.array_equal(self.rho, other.rho))
 
-    def __sub__(A, B):
-        if isinstance(B, A.__class__):
-            return A.__class__(A.profile - B.profile, A.grid)
-        elif isinstance(B, (list, tuple, np.ndarray)) and len(B) == len(A.profile) or not hasattr(B, '__len__'):
-            return A.__class__(A.profile - B, A.grid)
-        else:
-            raise Exception("Type mismatch in Profile.__sub__")
+    def __add__(self, other):
+        return type(self)(self.profile + self._operand(other), self.grid)
 
-    def __rsub__(A, B):
-        return -1*(A.__sub__(B))
+    def __radd__(self, other):
+        return self.__add__(other)
 
-    def __mul__(A, B):
-        if isinstance(B, A.__class__):
-            return A.__class__(A.profile * B.profile, A.grid)
-        elif (hasattr(B, 'size') and B.size == 1) or (isinstance(B, (list, tuple, np.ndarray)) and len(B) == len(A.profile)) or not hasattr(B, '__len__'):
-            return A.__class__(A.profile * B, A.grid)
-        else:
-            raise Exception("Type mismatch in Profile.__mul__")
+    def __sub__(self, other):
+        return type(self)(self.profile - self._operand(other), self.grid)
 
-    def __rmul__(A, B):
-        return A.__mul__(B)
+    def __rsub__(self, other):
+        return type(self)(self._operand(other) - self.profile, self.grid)
 
-    def __truediv__(A, B):
-        if isinstance(B, A.__class__):
-            return A.__class__(A.profile / B.profile, A.grid)
-        elif isinstance(B, (list, tuple, np.ndarray)) and len(B) == len(A.profile) or not hasattr(B, '__len__'):
-            return A.__class__(A.profile / B, A.grid)
-        else:
-            raise Exception("Type mismatch in Profile.__truediv__")
+    def __mul__(self, other):
+        return type(self)(self.profile * self._operand(other), self.grid)
 
-    def __rtruediv__(A, B):
-        if isinstance(B, (list, tuple, np.ndarray)) and len(B) == len(A.profile) or not hasattr(B, '__len__'):
-            return A.__class__(B / A.profile, A.grid)
-        else:
-            raise Exception("Type mismatch in Profile.__truediv__")
+    def __rmul__(self, other):
+        return self.__mul__(other)
 
-    def __neg__(A):
-        return -1*A
+    def __truediv__(self, other):
+        return type(self)(self.profile / self._operand(other), self.grid)
 
-    def __pow__(A, b):
-        return A.__class__(A.profile**b, A.grid)
+    def __rtruediv__(self, other):
+        return type(self)(self._operand(other) / self.profile, self.grid)
 
-    def __eq__(A, B):
-        if not isinstance(B, A.__class__):
+    def __neg__(self):
+        return type(self)(-self.profile, self.grid)
+
+    def __pow__(self, other):
+        return type(self)(self.profile**self._operand(other), self.grid)
+
+    def __eq__(self, other):
+        if not isinstance(other, Profile):
             return NotImplemented
-        return np.array_equal(A.rho, B.rho) and np.array_equal(A.profile, B.profile)
+        return self._same_grid(other) and np.array_equal(self.profile, other.profile)
 
     def __getitem__(A, i):
         return A.profile[i]
@@ -197,9 +190,9 @@ class GridProfile(Profile):
         Returns a FluxProfile with log gradient values
         '''
         with np.errstate(divide='ignore', invalid='ignore'):
-            return self.log_gradient().toFluxProfile()
+            return self.log_gradient().toFluxProfile(positive=False)
 
-    def toFluxProfile(self):
+    def toFluxProfile(self, *, positive=True):
 
         flux_length = self.length - 1
         flux_prof = np.zeros(flux_length)
@@ -209,21 +202,21 @@ class GridProfile(Profile):
         ix = 0
         flux_prof[ix] = 0.125*(3.0*prof[ix] + 6.0*prof[ix+1] - prof[ix+2])
         # if third order interpolated value is negative when it shouldn't be, use second order interpolation
-        if flux_prof[ix] <= 0 and prof[ix] > 0 and prof[ix+1] > 0:
+        if positive and flux_prof[ix] <= 0 and prof[ix] > 0 and prof[ix+1] > 0:
             flux_prof[ix] = 0.5*(prof[ix+1] + prof[ix])
 
         # outer boundary (third order)
         ix = flux_length-1
         flux_prof[ix] = 0.125*(3.0*prof[ix+1] + 6.0*prof[ix] - prof[ix-1])
         # if third order interpolated value is negative when it shouldn't be, use second order interpolation
-        if flux_prof[ix] <= 0 and prof[ix] > 0 and prof[ix+1] > 0:
+        if positive and flux_prof[ix] <= 0 and prof[ix] > 0 and prof[ix+1] > 0:
             flux_prof[ix] = 0.5*(prof[ix+1] + prof[ix])
 
         # interior (fourth order)
         for ix in np.arange(1, flux_length-1):
             flux_prof[ix] = 0.0625*(-prof[ix-1] + 9.0*prof[ix] + 9.0*prof[ix+1] - prof[ix+2])
             # if fourth order interpolated value is negative when it shouldn't be, use second order interpolation
-            if flux_prof[ix] <= 0 and prof[ix] > 0 and prof[ix+1] > 0:
+            if positive and flux_prof[ix] <= 0 and prof[ix] > 0 and prof[ix+1] > 0:
                 flux_prof[ix] = 0.5*(prof[ix+1] + prof[ix])
 
         return FluxProfile(flux_prof, self.grid)

@@ -24,8 +24,11 @@ class FluxModelDict():
         from t3d.flux_models.SFINCS import SFINCS_FluxModel
         from t3d.flux_models.PowerBalance import PowerBalance_FluxModel
 
-        model_list_params = inputs.get('model', {})
-        self.N_models = len(model_list_params)
+        config = inputs.get('model', {})
+        if isinstance(config,dict):
+            config = [config]
+        if not isinstance(config,list) or any(not isinstance(pars,dict) for pars in config):
+            raise TypeError("model must be a table or an array of tables")
         self.models_dict = OrderedDict()
 
         models = {
@@ -46,18 +49,21 @@ class FluxModelDict():
             "PowerBalance": PowerBalance_FluxModel
         }
 
-        if type(model_list_params) is list:
-            for pars in model_list_params:
-                my_model = pars.get('model', 'GX')
-                model = models[my_model](pars, grid, time)
-                label = model.label
-                if label in self.models_dict:
-                    raise ValueError(f"Duplicate flux model label {label!r}; "
-                                     "assign a unique label to each [[model]].")
-                self.models_dict[label] = model
-        else:
-            my_model = model_list_params.get('model', 'GX')
-            self.models_dict[my_model] = models[my_model](model_list_params, grid, time)
+        for pars in config:
+            key = pars.get('model','GX')
+            if key not in models:
+                raise ValueError(f"Unknown flux model {key!r}")
+            label = pars.get('label', {'gx':'GX','GS2-QL':'GS2','gs2-ql':'GS2','relu':'ReLU',
+                                       'knosos':'KNOSOS','neo':'NEO','sfincs':'SFINCS',
+                                       'ChangHinton':'Chang-Hinton'}.get(key,key))
+            if not isinstance(label,str) or not label or '/' in label:
+                raise ValueError(f"Invalid flux model label {label!r}")
+            model = models[key](pars, grid, time)
+            label = model.label
+            if label in self.models_dict:
+                raise ValueError(f"Duplicate flux model label {label!r}; assign unique labels.")
+            self.models_dict[label] = model
+        self.N_models = len(self.models_dict)
 
         # check for compatibility of sqrt(2) v_th conventions
         self.vt_sqrt_2 = None
@@ -65,7 +71,8 @@ class FluxModelDict():
             if model.vt_sqrt_2 is not None and self.vt_sqrt_2 is None:
                 self.vt_sqrt_2 = model.vt_sqrt_2
             elif model.vt_sqrt_2 is not None and self.vt_sqrt_2 is not None:
-                assert model.vt_sqrt_2 == self.vt_sqrt_2, "Error: cannot have flux models with different v_th sqrt(2) conventions"
+                if model.vt_sqrt_2 != self.vt_sqrt_2:
+                    raise ValueError("Flux models must use the same thermal-speed normalization")
 
         # Print logfile for flux models
         info('\n  Flux model log files')

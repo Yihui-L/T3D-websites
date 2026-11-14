@@ -77,7 +77,7 @@ def source_sink_bar_plot(infile,
     drho = data.drho
     axis = data.rho
     cax = axis[:-1]
-    G = data.G_fac[:-1]
+    G = data.t_G_fac[t,:-1]
     r_axis = np.arange(N-1)
 
     # compute div flux

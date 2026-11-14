@@ -1,4 +1,5 @@
 import numpy as np
+from contextlib import closing
 import matplotlib.pyplot as plt
 from scipy.optimize import root_scalar
 from scipy.interpolate import interp1d
@@ -19,51 +20,53 @@ class VmecReader():
     def __init__(self, fin):
 
         from netCDF4 import Dataset
-        f = Dataset(fin, mode='r')
+        with closing(Dataset(fin, mode='r')) as f:
+            def get(f, key):
+                value = f.variables[key][:]
+                if np.any(np.ma.getmaskarray(value)):
+                    raise ValueError(f"VMEC wout variable {key!r} has missing values.")
+                return np.asarray(value)
 
-        def get(f, key):
-            return f.variables[key][:]
+            # The Fourier reconstruction uses only R cosine and Z sine modes.
+            # Do not silently drop asymmetric terms from the surface area.
+            for key in ('lasym__logical__', 'lasym'):
+                if key in f.variables and bool(get(f, key)):
+                    raise ValueError('T3D VMEC geometry requires a stellarator-symmetric wout file (lasym=false).')
 
-        # The Fourier reconstruction uses only R cosine and Z sine modes.
-        # Do not silently drop asymmetric terms from the surface area.
-        for key in ('lasym__logical__', 'lasym'):
-            if key in f.variables and bool(get(f, key)):
-                f.close()
-                raise ValueError('T3D VMEC geometry requires a stellarator-symmetric wout file (lasym=false).')
+            # 0D array
+            self.nfp = int(get(f, 'nfp').item())
+            self.ns = int(get(f, 'ns').item())
+            self.mnmax = get(f, 'mnmax')
+            self.aminor = get(f, 'Aminor_p')
+            self.Rmajor = get(f, 'Rmajor_p')
+            self.volume = get(f, 'volume_p')
+            self.volavgB = get(f, 'volavgB')
+            self.B0 = get(f, 'b0')
 
-        # 0D array
-        self.nfp = get(f, 'nfp')
-        self.ns = get(f, 'ns')
-        self.mnmax = get(f, 'mnmax')
-        self.aminor = get(f, 'Aminor_p')
-        self.Rmajor = get(f, 'Rmajor_p')
-        self.volume = get(f, 'volume_p')
-        self.volavgB = get(f, 'volavgB')
-        self.B0 = get(f, 'b0')
+            # 1D array
+            self.xm = get(f, 'xm')
+            self.xn = get(f, 'xn')
 
-        # 1D array
-        self.xm = get(f, 'xm')
-        self.xn = get(f, 'xn')
+            self.iotaf = get(f, 'iotaf')
+            self.presf = get(f, 'presf')
 
-        self.iotaf = get(f, 'iotaf')
-        self.presf = get(f, 'presf')
+            if self.ns < 2 or self.nfp < 1 or not np.isfinite(self.aminor) or self.aminor <= 0:
+                raise ValueError("VMEC wout requires a positive minor radius, periods and at least two radial surfaces.")
+            self.s = np.linspace(0., 1., self.ns)
+            self.rho = np.sqrt(self.s)
 
-        self.s = np.linspace(0., 1., self.ns)
-        self.rho = np.sqrt(self.s)
+            # 2D array (order of indices is rmnc[i_s,i_mn] etc)
+            self.rmnc = np.array(get(f, 'rmnc'))
+            self.zmns = np.array(get(f, 'zmns'))
+            self.lmns = np.array(get(f, 'lmns'))
+            self.bmnc = np.array(get(f, 'bmnc'))
+            self.bsupumnc = np.array(get(f, 'bsupumnc'))
+            self.bsupvmnc = np.array(get(f, 'bsupvmnc'))
+            self.gmnc = np.array(get(f, 'gmnc'))  # this is sqrt(g), the jacobian
+            zero_mode = np.flatnonzero((get(f, 'xm_nyq') == 0) & (get(f, 'xn_nyq') == 0))
 
-        # 2D array (order of indices is rmnc[i_s,i_mn] etc)
-        self.rmnc = np.array(get(f, 'rmnc'))
-        self.zmns = np.array(get(f, 'zmns'))
-        self.lmns = np.array(get(f, 'lmns'))
-        self.bmnc = np.array(get(f, 'bmnc'))
-        self.bsupumnc = np.array(get(f, 'bsupumnc'))
-        self.bsupvmnc = np.array(get(f, 'bsupvmnc'))
-        self.gmnc = np.array(get(f, 'gmnc'))  # this is sqrt(g), the jacobian
-        zero_mode = np.flatnonzero((get(f, 'xm_nyq') == 0) & (get(f, 'xn_nyq') == 0))
-
-        # Get B field
-        self.phi = get(f, 'phi')  # toroidal flux in SI webers (signed)
-        f.close()
+            # Get B field
+            self.phi = get(f, 'phi')  # toroidal flux in SI webers (signed)
         if zero_mode.size != 1:
             raise ValueError('VMEC wout must contain one (m,n)=(0,0) Nyquist mode.')
 

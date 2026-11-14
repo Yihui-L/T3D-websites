@@ -141,13 +141,19 @@ control acceptance. Density and pressure must remain positive and finite for all
 species, including those reconstructed from quasineutrality. Set ``t_max = 0``
 or ``N_steps = 0`` to write the initial profiles without a transport step.
 
+A single ``[model]`` uses the same label as ``[[model]]`` for diagnostics
+and lookups. To run with no modeled radial flux, explicitly use a top-level
+``model = []``; omission still selects the default GX model.
+
 The NetCDF and ADIOS2 histories expose the time-discrete defect as
 ``t_implicit_rms``, separately from the Newton correction and the semidiscrete
 steady rate. This diagnostic does not change the Newton acceptance tolerance.
 ``t_arrival_order`` records the order used to advance to an accepted profile.
 An imposed edge or Sudo density feedback jump invalidates the preceding
 derivative and restarts the next step at first order; ``t_arrival_order = 0``
-marks a snapshot with no such derivative. Sudo density feedback is applied
+marks a snapshot with no such derivative. The per-frame ``t_G_fac`` accompanies
+the equilibrium identity so diagnostics can use the metric for their own
+record rather than the initial equilibrium. Sudo density feedback is applied
 at initialization and accepted step boundaries, not during transport
 residual evaluation.
 
@@ -420,14 +426,18 @@ unless its radial Gaussian fraction is at most :math:`\sqrt{\epsilon_\mathrm{flo
 A Gaussian narrower than one radial shell is deposited conservatively when
 ``integrated`` is prescribed, but its radial shape cannot be resolved.
 
-One species density is eliminated by quasineutrality and is not an
-independent transport unknown. Use ``qneut_species = true`` on exactly one
-species to select it explicitly. Otherwise T3D tries the impurity, the
-last independently evolving ion, or the last unlinked ion, in that order;
-if every ion is already linked by ``density.equal_to``, the electron is used
-when it is unlinked. A species cannot specify both ``qneut_species`` and a
-proportional density ``equal_to``. The remaining species' linked and
-independent densities are enforced jointly with charge neutrality.
+One independent root density is eliminated by quasineutrality unless the
+``density.equal_to`` relationships already impose it identically; for example,
+:math:`n_H=n_e` in a pure hydrogen plasma leaves the electron density free.
+Use ``qneut_species = true`` on one unlinked species with nonzero
+independent charge to select it explicitly. Otherwise T3D tries eligible
+impurity and ion roots, then the electron root. Inputs that make positive
+neutral densities impossible are rejected. Density and temperature links
+are evaluated in dependency order regardless of species-table order.
+An ``init_to`` link applies only to the initial profile; it cannot also set
+``equal_to`` for the same field, and a separately imposed charge constraint
+takes precedence when solving for a dependent species. Link factors must
+be finite and positive. Cycles and unknown species are errors.
 
 
 geometry
@@ -486,7 +496,9 @@ T3D reads radial-bin profiles on ``sqrt(s)`` and sums beam-line contributions.
 Ion heating is assigned to the bulk ion; the single supported particle source
 channel is for bulk-ion isotope injection. The bulk-ion temperature is used
 where BEAMS3D accepts one ion-temperature profile. Do not use this interface
-to infer species-resolved ion heating or fast-ion populations.
+to infer species-resolved ion heating or fast-ion populations. The executed
+VMEC file must already carry the desired dimensional size and field;
+BEAMS3D cannot be coupled to a T3D-only ``[rescale]`` size or field override.
 
 By default BEAMS3D derivatives are lagged in the transport Jacobian.
 ``implicit = true`` computes separate finite-difference runs with respect to

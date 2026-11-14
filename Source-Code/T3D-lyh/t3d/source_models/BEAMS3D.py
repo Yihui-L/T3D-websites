@@ -53,6 +53,7 @@ class BEAMS3D_SourceModel(SourceModel):
 
     def compute_sources(self, species, geo, norms):
         self.source_jacobian = None
+        self.base = None
         n, T, _ = species.get_profiles_on_grid()
         base = self.run_beams3d(n, T, species, geo)
         self.base = self.read_beams3d_deposition(base, species, norms)
@@ -60,6 +61,8 @@ class BEAMS3D_SourceModel(SourceModel):
             return
 
         y = species.get_vec_from_profs()
+        if not y.size:
+            return  # diagnostic-only state: evaluate the source once, with no probes
         jac = np.zeros((y.size, y.size))
         scratch = species.profile_scratch()
         baseline = self.source_vector(self.base, species)
@@ -89,14 +92,26 @@ class BEAMS3D_SourceModel(SourceModel):
         blocks.extend((2/3)*Sp[index[k]] for k in species.T_evolve_keys)
         for block in blocks:
             block[-1] = 0
-        return np.concatenate(blocks)
+        return np.concatenate(blocks) if blocks else np.empty(0)
 
     def collect_results(self, species, geo, norms):
+        if getattr(self, "base", None) is None:
+            raise RuntimeError("BEAMS3D has no completed source evaluation to collect")
         species.add_source(*self.base, label=self.label)
 
     def run_beams3d(self, ns, Ts, species, geo):
         import f90nml
 
+        # The external solver reads the actual, unmodified VMEC file. A T3D
+        # normalization override is not a rescaling of those trajectories.
+        option = getattr(geo, "geo_option", None)
+        if option in ("vmec", "desc"):
+            native_radius = geo.a_minor_vmec if option == "vmec" else geo.a_minor_desc
+            if (not np.isclose(geo.a_minor, native_radius, rtol=1e-12, atol=0)
+                    or not np.isclose(geo.B_scale, 1., rtol=1e-12, atol=0)):
+                raise ValueError("BEAMS3D requires the wout to carry the physical size and field; disable T3D geometry rescaling")
+        elif option is not None:
+            raise ValueError("BEAMS3D requires VMEC or DESC geometry with a VMEC-format wout")
         geo_file = Path(geo.geo_file).resolve()
         if geo_file.suffix != ".nc" or not geo_file.is_file():
             raise ValueError("BEAMS3D requires an existing VMEC-format wout .nc file")

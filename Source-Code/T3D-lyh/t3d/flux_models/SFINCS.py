@@ -1,5 +1,6 @@
 import numpy as np
-import subprocess
+from copy import deepcopy
+import f90nml
 from datetime import datetime
 import os
 import shutil
@@ -23,7 +24,7 @@ class SFINCS_FluxModel(FluxModel):
 
         out_dir = self.out_dir = run_workspace(pars.get('sfincs_outputs', 'sfincs/'))
         self.logfile = pars.get('sfincs_logfile', 'sfincs.log')
-        sfincs_template = pars.get('sfincs_template', 'tests/sfincs/sfincs_template.in')
+        sfincs_template = pars.get('sfincs_template', 'tests/regression/sfincs_template.namelist')
         self.overwrite = pars.get('overwrite', False)
         self.label = pars.get('label', 'SFINCS')  # label for diagnostics
 
@@ -115,19 +116,17 @@ class SFINCS_FluxModel(FluxModel):
 
         if geo.geo_option == 'desc' and not str(geo.geo_file).lower().endswith('.nc'):
             raise ValueError("SFINCS DESC coupling requires VMEC-format wout; set desc_use_vmec_format")
-        if geo.geo_option in ('vmec', 'desc'):
-            if self.grid.flux_label != 'torflux':
-                raise ValueError("SFINCS with VMEC wout requires the toroidal-flux radius")
-            self.namelist["geometryparameters"]["geometryscheme"] = "5"
-            self.namelist["geometryparameters"]["equilibriumfile"] = '"../../../{}"'.format(geo.geo_file.strip())
-            self.namelist["geometryparameters"]["inputradialcoordinate"] = "3"
-            self.namelist["geometryparameters"]["inputradialcoordinateforgradients"] = "3"
-            self.namelist["geometryparameters"]["vmecradialoption"] = "0"
+        if geo.geo_option not in ('vmec', 'desc') or self.grid.flux_label != 'torflux':
+            raise ValueError("SFINCS requires VMEC-format wout and the toroidal-flux radius")
+        geometry = self.namelist["geometryparameters"]
+        geometry.update(geometryscheme=5, inputradialcoordinate=3,
+                        inputradialcoordinateforgradients=3, vmecradialoption=0)
 
-        self.namelist["speciesparameters"]["zs"] = ' '.join(map(str, species.get_charges(normalize=True)))
-        self.namelist["speciesparameters"]["mhats"] = ' '.join(map(str, species.get_masses(normalize=True)))
-        self.namelist['general']['ambipolarsolve'] = '.true.'
-        self.namelist['general']['ambipolarsolveoption'] = '2'
+        # SFINCS normalizes mass, but its Zs is always signed charge in e.
+        self.namelist["speciesparameters"]["zs"] = species.get_charges(normalize=False).tolist()
+        self.namelist["speciesparameters"]["mhats"] = species.get_masses(normalize=True).tolist()
+        self.namelist['general']['ambipolarsolve'] = True
+        self.namelist['general']['ambipolarsolveoption'] = 2
 
         # set normalization parameters so that SFINCS reference parameters match T3D ones... but not R_bar!
         # n_bar = 10^20 m^-3
@@ -234,17 +233,17 @@ class SFINCS_FluxModel(FluxModel):
             os.mkdir(flux_dir)
             input_file = flux_dir + "/input.namelist"
 
-            sfincs_namelist = self.namelist
-            sfincs_namelist["speciesparameters"]["nhats"] = ' '.join(map(str, ns[:, r_id]))
-            sfincs_namelist["speciesparameters"]["thats"] = ' '.join(map(str, Ts[:, r_id]))
-            sfincs_namelist["speciesparameters"]["dnhatdrns"] = ' '.join(map(str, -ns[:, r_id]*kns[:, r_id]))
-            sfincs_namelist["speciesparameters"]["dthatdrns"] = ' '.join(map(str, -Ts[:, r_id]*kts[:, r_id]))
+            sfincs_namelist = deepcopy(self.namelist)
+            sfincs_namelist["speciesparameters"]["nhats"] = (ns[:, r_id]).tolist()
+            sfincs_namelist["speciesparameters"]["thats"] = (Ts[:, r_id]).tolist()
+            sfincs_namelist["speciesparameters"]["dnhatdrns"] = (-ns[:, r_id]*kns[:, r_id]).tolist()
+            sfincs_namelist["speciesparameters"]["dthatdrns"] = (-Ts[:, r_id]*kts[:, r_id]).tolist()
             sfincs_namelist["geometryparameters"]["rn_wish"] = rho[r_id]
 
-            geo_file_path = os.path.abspath(geo.geo_file.strip())
+            geo_file_path = os.path.abspath(os.fspath(geo.geo_file).strip())
             geo_filename = os.path.basename(geo_file_path)
             shutil.copyfile(geo_file_path, os.path.join(flux_dir, geo_filename))
-            self.namelist["geometryparameters"]["equilibriumfile"] = f'"{geo_filename}"'
+            sfincs_namelist["geometryparameters"]["equilibriumfile"] = geo_filename
 
             self.write_sfincs_input(input_file,sfincs_namelist)
             flux_files.append(self.submit_sfincs_job(flux_dir))
@@ -319,7 +318,7 @@ class SFINCS_FluxModel(FluxModel):
                     include_phi1 = scalar("includePhi1") == true
                 else:
                     # Older files may omit the configuration metadata.
-                    include_phi1 = self.namelist["physicsparameters"].get("includephi1", ".false.").lower() == ".true."
+                    include_phi1 = self.namelist["physicsparameters"].get("includephi1", False)
                 suffix = "vd" if include_phi1 else "vm"
 
                 def final_flux(kind):
@@ -336,115 +335,37 @@ class SFINCS_FluxModel(FluxModel):
                 pflux[:, r_id] = final_flux("particle")
                 qflux[:, r_id] = final_flux("heat")
 
-        # SFINCS fluxes are in normalized sfincs units. need to normalize to gyroBohm
-        # note SFINCS uses vt = sqrt(2T/m), but to make this model compatible with other
-        # models with vt_sqrt_2 = False, multiply by sqrt(2) factors
-        for i, s in enumerate(species.get_species_list()):
-            qflux[i, :] = qflux[i, :]*np.sqrt(8)*geo.Btor**2/(species.ref_species.n()*species.ref_species.T()**2.5).toFluxProfile()/geo.grho*norms.rho_star**-2*norms.a_meters
-            pflux[i, :] = pflux[i, :]*np.sqrt(2)*geo.Btor**2/(species.ref_species.n()*species.ref_species.T()**1.5).toFluxProfile()/geo.grho*norms.rho_star**-2*norms.a_meters
+        # SFINCS rN particle/energy units are nbar*vbar/Rbar and
+        # nbar*vbar^3*mbar/Rbar. Invert the same discrete face factors as
+        # Species.Fn_plus and Species.Fp_plus, respectively.
+        n, p = species.ref_species.n(), species.ref_species.p()
+        particle_factor = (p**1.5/n**.5).toFluxProfile().profile
+        energy_factor = p.toFluxProfile().profile**2.5/n.toFluxProfile().profile**1.5
+        radial_scale = geo.Btor**2 / geo.grho.profile * norms.rho_star**-2 * norms.a_meters
+        speed_ratio = np.sqrt(2/norms.vtfac)
+        pflux *= speed_ratio * radial_scale / particle_factor
+        qflux *= 2 * speed_ratio * radial_scale / energy_factor
 
         self.info(f'\n  {self.label}: qflux = {qflux}\n')
         self.info(f'\n  {self.label}: pflux = {pflux}\n')
         return pflux, qflux
 
     def write_sfincs_input(self, fout, namelist):
-        with open(fout, 'x') as f:
-
-            for item in namelist.items():
-
-                if (type(item[1]) is not dict):
-                    print('  %s = %s ' % item, file=f)
-                    continue
-
-                header, nest = item
-                print('\n&%s' % header, file=f)
-                if len(nest.keys()) <= 0:
-                    print('/\n', file=f)
-                    continue
-                longest_key = max(nest.keys(), key=len)
-                N_space = len(longest_key)
-                for pair in nest.items():
-                    s = '  {:%i}  =  {}' % N_space
-                    print(s.format(*pair), file=f)
-                print('/\n', file=f)
-
+        # Reset lower bounds for all arrays written by T3D. An indexed input
+        # template can otherwise keep its start_index after replacement.
+        start_index = namelist["speciesparameters"].start_index
+        for key in ("zs", "mhats", "nhats", "thats", "dnhatdrns", "dthatdrns"):
+            start_index.pop(key, None)
+        f90nml.write(namelist, fout)
         self.info(f'  wrote input: {fout}')
 
-    def read_sfincs_input(self,fin):
-        with open(fin) as f:
-            data = f.readlines()
-
-        obj = {}
-        header = ''
-        for line in data:
-
-            # strip comments
-            if line.find('!') > -1:
-                end = line.find('!')
-                line = line[:end]
-
-            # parse headers
-            if line.find('&') == 0:
-                header = line.split('&')[1].strip().lower()
-                obj[header] = {}
-                continue
-
-            if len(line.strip()) > 0 and line.strip()[0] == '/':
-                header = ''
-            # skip blanks
-            if line.find('=') < 0:
-                continue
-
-            # store data
-            key, value = line.split('=')
-            key = key.strip().lower()
-            value = value.strip()
-
-            if header == '':
-                obj[key] = value
-            else:
-                obj[header][key] = value
-
-        # check for all possible header types in GX input file,
-        # and initialize empty if not found
-        try:
-            obj['general']
-        except:
-            obj['general'] = {}
-        try:
-            obj['geometryparameters']
-        except:
-            obj['geometryparameters'] = {}
-        try:
-            obj['speciesparameters']
-        except:
-            obj['speciesparameters'] = {}
-        try:
-            obj['physicsparameters']
-        except:
-            obj['physicsparameters'] = {}
-        try:
-            obj['resolutionparameters']
-        except:
-            obj['resolutionparameters'] = {}
-        try:
-            obj['othernumericalparameters']
-        except:
-            obj['othernumericalparameters'] = {}
-        try:
-            obj['preconditioneroptions']
-        except:
-            obj['preconditioneroptions'] = {}
-        try:
-            obj['export_f']
-        except:
-            obj['export_f'] = {}
-        try:
-            obj['adjointoptions']
-        except:
-            obj['adjointoptions'] = {}
-
-        self.namelist = obj
+    def read_sfincs_input(self, fin):
+        self.namelist = f90nml.read(fin)
+        for name in ('general', 'geometryparameters', 'speciesparameters',
+                     'physicsparameters', 'resolutionparameters',
+                     'othernumericalparameters', 'preconditioneroptions',
+                     'export_f', 'adjointoptions'):
+            self.namelist.setdefault(name, f90nml.Namelist())
         self.filename = fin
 
     def print_time(self):

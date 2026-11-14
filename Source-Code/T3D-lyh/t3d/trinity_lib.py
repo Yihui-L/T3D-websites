@@ -98,6 +98,7 @@ class TrinityEngine():
     # End of __init__ function
 
     def _evaluate_transport_terms(self):
+        self.time.diagnostics_current = False
         models = tuple(self.flux_models.get_models_list())
         sources = tuple(self.source_models.get_sources_list())
         try:

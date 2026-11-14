@@ -50,10 +50,8 @@ class TransportSolver():
         scratch = species.profile_scratch()
         keys = [(key, False) for key in species.n_evolve_keys]
         keys += [(key, True) for key in species.T_evolve_keys]
-        baselines = {}
-        for key, pressure in keys:
-            kn, kT, _ = species[key].get_fluxgrads()
-            baselines[key, pressure] = (kT if pressure else kn).profile
+        rows = {item.type: i for i, item in enumerate(species.get_species_list())}
+        kn0, kT0, _, _ = species.get_grads_on_flux_grid()
 
         G = np.tile((self.geo.G_fac/self.grid.drho).profile, species.evolve_count)
         local_physics = copy(self.physics)
@@ -64,8 +62,9 @@ class TransportSolver():
             scratch.get_profs_from_vec(v)
             if not scratch.profiles_are_physical():
                 return None
-            kn, kT, _ = scratch[key].get_fluxgrads()
-            delta = (kT if pressure else kn).profile - baselines[key, pressure]
+            kn, kT, _, _ = scratch.get_grads_on_flux_grid()
+            row = rows[key]
+            delta = kT[row]-kT0[row] if pressure else kn[row]-kn0[row]
             suffix = "_dkT" if pressure else "_dkn"
             for base in species.get_species_list():
                 item = scratch[base.type]
@@ -224,8 +223,16 @@ class TransportSolver():
     def profile_rms(self, delta, y):
         delta = delta.reshape(-1, self.N_radial)[:, :-1]
         y = y.reshape(-1, self.N_radial)[:, :-1]
+        if delta.size == 0:
+            return 0.
         with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-            return np.sqrt(np.mean((delta/y)**2))
+            relative = np.abs(delta/y)
+        scale = np.max(relative)
+        if not np.isfinite(scale) or scale == 0.:
+            return scale
+        # Squaring unscaled ratios can overflow or underflow even though
+        # the RMS itself is representable.
+        return scale*np.sqrt(np.mean((relative/scale)**2))
 
     def advance(self, species):
         self.y_curr = self.y_new
