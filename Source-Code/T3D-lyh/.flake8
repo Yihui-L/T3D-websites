@@ -1,0 +1,6 @@
+[flake8]
+extend-ignore = E231, E501, E722, F821, F841
+exclude =
+    .env
+    .venv
+statistics = True

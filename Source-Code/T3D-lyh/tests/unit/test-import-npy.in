@@ -1,0 +1,26 @@
+[grid]
+  N_radial = 9
+  rho_edge = 0.7
+  flux_label = "torflux"
+
+[import]
+  type = "t3d"
+  file = "tests/regression/ref-w7x-relu.log.npy"
+
+[[species]]
+type = "hydrogen"
+density = {evolve = false} # will be set by quasineutrality
+temperature = {import = true, evolve = true}
+
+[[species]]
+type = "electron"
+density = {import = true, evolve = false}
+temperature = {import = true, evolve = true}
+
+[geometry]
+  geo_option = "basic"
+  AspectRatio = 4.0
+
+[rescale]
+  a_minor = 1.0
+  Ba = 2.5

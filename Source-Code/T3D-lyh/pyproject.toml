@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "t3d"
+requires-python = ">=3.10"
+dynamic = ["version"]
+authors = [
+    {name = "Tony Qian", email = "tqian@pppl.gov"},
+    {name = "Noah Mandell", email = "nmandell@pppl.gov"},
+    {name = "Bill Dorland", email = "bdorland@pppl.gov"},
+    {name = "Jai Sachdev", email = "jsachdev@pppl.gov"},
+]
+description = "Short description about t3d"
+readme = "README.md"
+keywords = ["plasma physics", "fusion", "stellarator", "tokamak", "transport"]
+license = {text = "GNU General Public License 3"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pandas",
+    "PyQt5",
+    "netcdf4",
+    "adios2",
+    "termcolor",
+    "tomli; python_version < '3.11'",
+    "tomli-w; python_version < '3.11'",
+    "tomlkit; python_version < '3.11'",
+    "joblib",
+    "f90nml",
+    "h5py"
+]
+
+[project.optional-dependencies]
+gx = ["booz_xform"]
+knosos = ["booz_xform"]
+desc = ["desc-opt"]
+all = ["t3d[gx, knosos]"]
+dev = [
+    "autopep8",
+    "bpcmp",
+    "flake8"
+]
+docs = [
+    "sphinx",
+    "sphinx_rtd_theme",
+    "readthedocs-sphinx-search",
+    "sphinx-autobuild"
+]
+
+[project.scripts]
+t3d = "t3d.__main__:main"
+t3d-plot = "t3d.tools.profile_plot:main"
+t3d-time-plot = "t3d.tools.time_plot:main"
+t3d-vmec-plot = "t3d.geometry_models.VMEC:main"
+t3d-source-sink-plot = "t3d.tools.source_sink_plot:main"
+t3d-extract-input-file = "t3d.tools.extract_input_file_from_output:main"
+t3d-unittests = "unittest:__main__"
+
+[tool.setuptools_scm]
+
+[tool.autopep8]
+max_line_length = 120
+ignore = ["E226", "E231", "E241", "E301", "E501", "E722"]
+recursive = true
+in-place = true
+aggressive = 3

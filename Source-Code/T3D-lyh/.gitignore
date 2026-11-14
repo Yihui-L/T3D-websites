@@ -1,0 +1,19 @@
+*.swp
+.*
+*.bak
+*~
+__pycache__
+t3d.egg-info
+tests/unit/knosos
+tests/unit/gx*
+tests/regression/w7x-gx-flux-tubes/
+tests/unit/beams3d
+*.npy
+docs/_build
+*.nc
+*.bp
+*.out
+local_hostfile*
+
+#### Ignore generated directories
+build/
