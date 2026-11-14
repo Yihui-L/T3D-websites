@@ -82,6 +82,7 @@ TRINITY3D · 一维径向输运
 ## 05 · 输入、重启与诊断输出
 
 - **重启单位与网格：** 旧归一化量先还原到物理单位再用新参考量归一化，兼容旧 t_ref；拒绝坐标不匹配、缺测或掩蔽数据；变网格用壳层重叠映射，不声称跨几何体积守恒。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py)
+- **文件通量导入：** 新增文件通量模型 Import：复用 [import] 与组分级 import/keys，读取每张磁面的有符号粒子率 (10^20/s) 与热功率 (MW)；在共享通量面线性插值，不外推，不折作体源。支持 ASCII 与已有 T3D 帧，及与 ReLU 相加；固定通量不影响 Newton Jacobian。 [配置](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/docs/FluxModels.rst) · [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/flux_models/Import.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_imported_flux.py)
 - **输入解析：** 保留实际 TOML／文件错误，不用错误的字符串回退覆盖原因；ASCII 多列源项求和，兼容 JETTO 时间键。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/Import.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_import.py)
 - **检查点与输出路径：** 每 N 个接受步写检查点，NPY 和 NetCDF 写完才替换上一份，BP 单独路径；各格式不会共用同一个文件名。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_driver_transactions.py)
 - **诊断对齐与单位：** 修正逐物种和离子汇总、粒子量和积分单位，分开输出 α 出生与沉积功率；记录几何文件、时间推进阶数、残差与诊断有效性。 [源码](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/t3d/TrinityIO.py) · [测试](https://github.com/Yihui-L/T3D-websites/blob/main/Source-Code/T3D-lyh/tests/unit/test_source_physics_io.py)
@@ -107,7 +108,8 @@ TRINITY3D · 一维径向输运
 
 - 终态离子温度最大差 16.57 eV（最内点）。固定密度、电子温度和外侧离子温度一致。净离子热源来自规定电子剖面的碰撞能量交换。
 - 残差为 `|dWi/dt − (Psource − Qout)|`。差异主要来自近轴体积权重和内部共享通量，其次有时间步轨迹和 Newton 收敛误差。结果不等价于实验预测精度提高。
-- 整套远程测试 179 通过、4 跳过。最终一轮复查未发现新的可复现缺陷。SFINCS 在两处 W7-X 磁面上进行单进程 CPU 冒烟测试；DESC 通过固定平衡 ReLU 输运，未验证完整移动磁面耦合。动理学电子 W7-X ReLU 变体 7 步到终点并逐点满足准中性。
+- 本轮文件通量验证：195 项中 191 通过、4 跳过（GX、GS2、KNOSOS、真实 ADIOS2），其中新增 12 项；等效源对照、共享面守恒、符号、单位、NC/NPY 回放均通过。官方 W7-X ReLU 最新版与改动前 -lyh 的摘要和接受步历史逐字节相同。
+- 前一轮远程测试 179 通过、4 跳过。最终一轮复查未发现新的可复现缺陷。SFINCS 在两处 W7-X 磁面上进行单进程 CPU 冒烟测试；DESC 通过固定平衡 ReLU 输运，未验证完整移动磁面耦合。动理学电子 W7-X ReLU 变体 7 步到终点并逐点满足准中性。
 - GX、GS2、BEAMS3D、KNOSOS、NEO、GPU/Slurm 和 ADIOS2 未完成真实运行验证；相应测试限于接口、合成数据或模拟调度。并行扩展性和移动磁面输运不在已验证范围内。
 
 <a name="reproduce"></a>
