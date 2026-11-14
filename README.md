@@ -1,6 +1,6 @@
 # T3D Websites
 
-T3D-lyh 源码手册与 W7-X ReLU 回归算例的公开网站，无需登录。
+T3D-lyh 源码手册与 W7-X ReLU 回归算例的公开网站，无需登录。由[站点总览](https://yihui-l.github.io/T3D-websites/Source-Code/home.html)进入手册和算例。
 
 | 目录 | 内容 | 网站 |
 | --- | --- | --- |
@@ -9,10 +9,9 @@ T3D-lyh 源码手册与 W7-X ReLU 回归算例的公开网站，无需登录。
 
 ```text
 T3D-websites/
-├── index.html
 ├── Source-Code/
 │   ├── T3D-lyh/
-│   └── 源码手册、参数表、版本说明与网页资源
+│   └── 站点总览、源码手册、参数表与网页资源
 ├── W7X-ReLU-lyh/
 │   ├── data/
 │   └── figures/
@@ -22,4 +21,4 @@ T3D-websites/
 
 源码快照的版本和许可见[源码版本说明](Source-Code/SOURCE_VERSION.md)。算例使用固定 VMEC 平衡；发布数据包含官方及 T3D-lyh 的接受态和对比口径，不是实验预测验证。
 
-GitHub Pages 从 `gh-pages` 分支根目录发布。该分支同步根入口、两份文档和算例资源，不复制源码快照；网页源码链接指向 `main` 分支。
+GitHub Pages 从 `gh-pages` 分支根目录发布。仓库根目录不设独立 HTML 首页；该分支同步子目录中的站点入口、文档和算例资源，不复制源码快照。网页源码链接指向 `main` 分支。
